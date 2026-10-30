@@ -1,0 +1,7 @@
+/docs/
+/data/
+/tmp/
+.env
+node_modules/
+web/dist/
+/ulka-vms
