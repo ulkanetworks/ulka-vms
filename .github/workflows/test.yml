@@ -2,10 +2,14 @@ name: Tests
 
 # Every pull request and every push to main: build, vet, unit tests, the end-to-end suite against the same data
 # services development uses (compose.yaml), the console's type check and unit tests, and a scan for committed secrets.
+# A change only to docs no test reads runs nothing. CLAUDE.md, ARCHITECTURE.md and the rules files are checked by
+# TestDocNames, so they always run it.
 on:
   pull_request:
+    paths-ignore: [README.md, SELF-HOSTING.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, LICENSE, '.github/ISSUE_TEMPLATE/**', .github/pull_request_template.md]
   push:
     branches: [main]
+    paths-ignore: [README.md, SELF-HOSTING.md, CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md, LICENSE, '.github/ISSUE_TEMPLATE/**', .github/pull_request_template.md]
 
 concurrency:
   group: tests-${{ github.event.pull_request.number || github.ref }}
@@ -42,7 +46,8 @@ jobs:
       - name: Data services (compose.yaml)
         run: |
           set -a; . ./.env; set +a
-          docker compose up -d --quiet-pull
+          # Only what the tests use: no origin, log shipping or telemetry collector to pull.
+          docker compose up -d --quiet-pull postgres seaweedfs clickhouse
           # until-loops: a failing probe is a loop condition, which bash -e leaves alone. SeaweedFS refuses a root listing, so any answer counts.
           timeout 120 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -q; do sleep 2; done'
           timeout 120 bash -c 'until curl -fs http://localhost:8124/ping >/dev/null; do sleep 2; done'
@@ -109,7 +114,8 @@ jobs:
       - name: Data services, migrations, API and worker
         run: |
           set -a; . ./.env; set +a
-          docker compose up -d --quiet-pull
+          # The origin serves the video pieces the browser plays; log shipping and the telemetry collector aren't needed.
+          docker compose up -d --quiet-pull postgres seaweedfs clickhouse origin
           timeout 120 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -q; do sleep 2; done'
           timeout 120 bash -c 'until curl -fs http://localhost:8124/ping >/dev/null; do sleep 2; done'
           timeout 120 bash -c 'until curl -s -o /dev/null http://localhost:8334/; do sleep 2; done'
@@ -124,9 +130,9 @@ jobs:
         working-directory: web
         run: |
           npm ci
-          npx playwright install --with-deps chromium
           set -a; . ../.env; set +a
-          npm run pages
+          # The runner's own Chrome: no browser or system libraries to download.
+          PLAYWRIGHT_CHANNEL=chrome npm run pages
       - name: Logs on failure
         if: failure()
         run: tail -n 80 /tmp/api.log /tmp/worker.log || true; docker compose logs --tail 50
