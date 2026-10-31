@@ -91,8 +91,15 @@ fit together and how to build on Ulka VMS.
 
 ## Deployment
 
-One server runs everything; more machines can be added for encoding. [SELF-HOSTING.md](SELF-HOSTING.md) walks through
-it on Ubuntu, step by step: DNS, installing, settings, services, HTTPS with Caddy, backups and updates. Service files
+One server runs everything; more machines can be added for encoding. On Ubuntu or Debian, point `videos.`, `player.`
+and `origin.` under your domain at the server, then run:
+
+```sh
+curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
+```
+
+It asks two questions, installs everything and starts it with HTTPS; run it again to upgrade.
+[SELF-HOSTING.md](SELF-HOSTING.md) has the same steps by hand, plus backups. Service files
 are in `deploy/systemd` and the Caddy configuration in `deploy/Caddyfile`.
 
 ## Contributing

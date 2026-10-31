@@ -1,16 +1,36 @@
 # Running Ulka VMS on your own server
 
-This guide puts Ulka VMS on one Ubuntu server, reachable over HTTPS at three addresses of your own. It takes about
-an hour. Every command runs on the server as a user with `sudo`.
+Ulka VMS runs on one Ubuntu or Debian server, reachable over HTTPS at three addresses of your own.
 
-## What you need
+## The quick way: one command
+
+1. Point three names at your server: `videos.`, `player.` and `origin.` under your domain, each an A record to the
+   server's public address.
+2. On the server, run:
+   ```sh
+   curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
+   ```
+   It asks for your domain and your email service's SMTP address, checks the names point at the server, installs
+   everything, makes every secret, and starts it with HTTPS. It takes about five minutes.
+3. Open `https://videos.<your domain>/signup` and create your account.
+
+To upgrade later, run the same command: your settings and videos stay. To install without questions (from a script),
+set `DOMAIN`, `SMTP_URL` and `MAIL_FROM` in the environment first.
+
+The rest of this guide does the same by hand, for those who want to see or change each step.
+
+## By hand
+
+Every command runs on the server as a user with `sudo`. It takes about an hour.
+
+### What you need
 
 - **A server** with Ubuntu 24.04, a public IP address, and at least 4 CPU cores, 8 GB of memory and enough disk for
   your videos. Encoding is the heavy part: more cores make videos ready sooner.
 - **A domain** where you can add DNS records. The guide uses `example.com`; put your own everywhere.
 - **An email service** that can send through SMTP (or a Resend account), for invitations and password resets.
 
-## 1. Point three names at the server
+### 1. Point three names at the server
 
 Add three A records (and AAAA records if the server has IPv6), each pointing at the server's address:
 
@@ -23,7 +43,7 @@ Add three A records (and AAAA records if the server has IPv6), each pointing at 
 Wait until `dig +short videos.example.com` answers with the server's address before step 8: HTTPS certificates are
 issued only for names that already point here.
 
-## 2. Install what it runs on
+### 2. Install what it runs on
 
 ```sh
 sudo apt update && sudo apt upgrade -y
@@ -57,7 +77,7 @@ Let only SSH and web traffic in. Docker publishes its ports on 127.0.0.1 only, s
 sudo ufw allow OpenSSH && sudo ufw allow 80 && sudo ufw allow 443 && sudo ufw enable
 ```
 
-## 3. Get Ulka VMS
+### 3. Get Ulka VMS
 
 ```sh
 sudo useradd --system --home /opt/ulka-vms --shell /usr/sbin/nologin ulka-vms
@@ -67,7 +87,7 @@ sudo git checkout v0.1.0          # the latest release: see the repository's Rel
 sudo chown -R "$USER" /opt/ulka-vms
 ```
 
-## 4. Write the settings
+### 4. Write the settings
 
 ```sh
 sudo mkdir -p /etc/ulka-vms
@@ -93,7 +113,7 @@ Delete the `# Tests` lines at the end: a server doesn't run them.
 Start-up checks these settings. Anything that only works on a laptop, such as a `localhost` address, `MAIL_PROVIDER=log`
 or an `example.com` address, stops it with a message saying which setting to fix.
 
-## 5. Start the data services
+### 5. Start the data services
 
 ```sh
 cd /opt/ulka-vms
@@ -106,7 +126,7 @@ Videos are stored by SeaweedFS in a Docker volume on this server. To use another
 Cloudflare R2, MinIO, Wasabi), set the `S3_*` settings to it, set `S3_PUBLIC_URL` to the bucket's own address, leave
 `COMPOSE_PROFILES` empty, and let anyone read only the segment files (`*.m4s` and `*/init.mp4`) with a bucket policy.
 
-## 6. Build and prepare the database
+### 6. Build and prepare the database
 
 ```sh
 cd /opt/ulka-vms
@@ -116,7 +136,7 @@ sudo sh -c 'set -a; . /etc/ulka-vms/ulka-vms.env; set +a; exec /opt/ulka-vms/bin
 sudo chown -R ulka-vms:ulka-vms /opt/ulka-vms
 ```
 
-## 7. Run the API and the worker as services
+### 7. Run the API and the worker as services
 
 ```sh
 sudo cp /opt/ulka-vms/deploy/systemd/ulka-vms-api.service /opt/ulka-vms/deploy/systemd/ulka-vms-worker.service /etc/systemd/system/
@@ -127,7 +147,7 @@ systemctl status ulka-vms-api ulka-vms-worker --no-pager
 
 Both should say `active (running)`. If one doesn't, `journalctl -u ulka-vms-api -n 50` says why.
 
-## 8. Put HTTPS in front
+### 8. Put HTTPS in front
 
 ```sh
 sudo cp /opt/ulka-vms/deploy/Caddyfile /etc/caddy/Caddyfile
@@ -141,7 +161,7 @@ sudo systemctl daemon-reload && sudo systemctl restart caddy
 Caddy gets a certificate for each name by itself. `journalctl -u caddy -n 50` shows any problem, usually a name that
 doesn't point at the server yet.
 
-## 9. Make your account, then close sign-up
+### 9. Make your account, then close sign-up
 
 1. Open `https://videos.example.com/signup` and create your account. Your workspace is made with it.
 2. Upload a short video under **Video → Libraries**, wait until it says **Ready**, and play it.
@@ -184,7 +204,7 @@ Test a restore before you need one.
 
 ## Updating
 
-Read [CHANGELOG.md](CHANGELOG.md) first, then:
+Read [CHANGELOG.md](CHANGELOG.md) first. If you installed with the one command, run it again. By hand:
 
 ```sh
 cd /opt/ulka-vms

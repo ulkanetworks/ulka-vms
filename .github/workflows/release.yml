@@ -1,0 +1,38 @@
+name: Release
+
+# A pushed v* tag builds the release archives install.sh downloads (one per processor) and publishes them, with
+# install.sh itself, as the tag's GitHub Release. "releases/latest/download/…" then serves the newest.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Build the console
+        run: cd web && npm ci && npm run build
+      - name: Package
+        run: |
+          scripts/package.sh "$GITHUB_REF_NAME" amd64
+          scripts/package.sh "$GITHUB_REF_NAME" arm64
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes=$(awk '/^## /{n++} n==1' CHANGELOG.md)
+          gh release create "$GITHUB_REF_NAME" --title "Ulka VMS $GITHUB_REF_NAME" --notes "$notes" \
+            dist/ulka-vms-linux-amd64.tar.gz dist/ulka-vms-linux-arm64.tar.gz install.sh

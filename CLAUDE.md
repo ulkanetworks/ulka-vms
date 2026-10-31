@@ -33,7 +33,9 @@ sqlc generate                            # after changing migrations/ or */queri
 go run ./cmd/ulka-vms migrate            # apply migrations to the dev database
 cd web && npm run check                  # route tree + tsc; must report 0 errors
 cd web && npm test                       # console unit tests (vitest)
+scripts/package.sh <version> <arch>      # a release archive in dist/ (the Release workflow runs it on a v* tag)
 ```
+- `install.sh` is the one-line install and upgrade; its messages name what it does, never the tools underneath.
 - Never run two `go test` runs at once: they share one test database, and one run's workers take the other's jobs.
 - The test database keeps earlier runs' data: fixtures that must be unique include a random slug. Tests use their
   own bucket (`S3_BUCKET` plus `-test`), emptied when a run starts.

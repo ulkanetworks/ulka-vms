@@ -77,6 +77,26 @@ The extension points:
 
 Before 1.0 these may change between minor versions; the changelog says when they do.
 
+## Installs and releases
+
+A pushed `v*` tag runs `.github/workflows/release.yml`: it builds the console once and, with `scripts/package.sh`,
+one archive per processor (`ulka-vms-linux-amd64.tar.gz`, `…-arm64.tar.gz`) holding the program, the built console,
+`compose.yaml` and the service and proxy files. They are published with `install.sh` as the tag's GitHub Release.
+
+`install.sh` is the one-line install (`curl -fsSL …/releases/latest/download/install.sh | sudo bash`). On a first run
+it asks for the domain and email settings (or reads them from the environment), checks the three names point at the
+server, installs what Ulka VMS runs on, writes /etc/ulka-vms/ulka-vms.env with generated secrets, starts the data
+services, migrates, and starts the API, worker and HTTPS proxy as services. On a later run it finds the settings and
+upgrades in place: new program and console, migrations, restart. Its messages speak of what it does, not the tools
+underneath; their output goes to a log it names. `SELF-HOSTING.md` has the same steps by hand.
+
+| Path on a server | What |
+|---|---|
+| /opt/ulka-vms | the release: `bin/ulka-vms`, `web/`, `compose.yaml`, `deploy/` |
+| /etc/ulka-vms/ulka-vms.env | settings and secrets, `SEAL_KEY` among them |
+| /etc/ulka-vms/web.env | the three host names and where the proxy sends them |
+| Docker volumes | Postgres, the video storage, ClickHouse |
+
 ## Scaling
 
 One machine runs everything for a small audience. In order, as load grows: more worker machines for encoding; a CDN
