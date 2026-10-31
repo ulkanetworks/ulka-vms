@@ -1,0 +1,156 @@
+/* Over the picture: tooltips, the seek bar's preview, the indicators for keys and gestures, and the spinner. */
+/* Seek preview, while the pointer is on the seek bar (Figma: "While Hovering on Seekbar", web and small player): a
+   white handle where it is, 8×16 (4×8 small), and above it the storyboard picture as a card, 156px wide (122px small),
+   1px light edge, 8px corners, with the time there in a dark frosted badge at its bottom right. The card's bottom is
+   37px above the bar (15px small: 2px above the timeline pill); with no storyboard the badge stands alone there. */
+.ulka-player .ulka-preview { position: absolute; inset: 0; z-index: 3; pointer-events: none; } /* the time sits on the storyboard picture, not behind it */
+.ulka-player .ulka-preview::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: var(--ulka-x);
+  width: 4px;
+  height: 8px;
+  border-radius: 18px;
+  background: var(--ulka-fg);
+  box-shadow: 0 0 2px rgb(0 0 0 / 30%);
+  translate: -50% -50%;
+  opacity: 0;
+  scale: .5;
+  transition: opacity 150ms var(--ulka-ease), scale 150ms var(--ulka-ease);
+}
+@container (width >= 48rem) { .ulka-player .ulka-preview::before { width: 8px; height: 16px; } }
+.ulka-player .ulka-preview[data-pointing]::before { opacity: 1; scale: 1; }
+.ulka-player .ulka-preview-label {
+  --ulka-card-gap: 15px;
+  position: absolute;
+  bottom: calc(100% + var(--ulka-card-gap) + 6px); /* alone, where it would sit inside the card */
+  left: var(--ulka-label-x);
+  display: grid;
+  place-items: center;
+  padding: 5px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 40%);
+  -webkit-backdrop-filter: blur(23px); backdrop-filter: blur(23px);
+  color: var(--ulka-pic-fg);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
+  font-variant-numeric: tabular-nums;
+  text-box: trim-both cap alphabetic;
+  white-space: nowrap;
+  translate: -50% 4px;
+  opacity: 0;
+  transition: opacity 150ms var(--ulka-ease), translate 150ms var(--ulka-ease);
+}
+/* On the picture: placed at the card's bottom right by skin/preview.ts. */
+.ulka-player .ulka-preview-label[data-on-card] { bottom: auto; top: var(--ulka-label-y); left: var(--ulka-label-x); translate: 0 4px; }
+@container (width >= 48rem) { .ulka-player .ulka-preview-label { --ulka-card-gap: 37px; padding: 6px; font-size: 14px; line-height: 18px; bottom: calc(100% + var(--ulka-card-gap) + 8px); } }
+.ulka-player .ulka-preview[data-pointing] .ulka-preview-label { opacity: 1; translate: -50% 0; }
+.ulka-player .ulka-preview[data-pointing] .ulka-preview-label[data-on-card] { translate: 0; }
+/* Shaka sizes the picture from this box's width, so it needs one (auto collapsed it to nothing). */
+.ulka-player .shaka-player-ui-thumbnail-container {
+  bottom: calc(100% + 15px);
+  width: 122px;
+  min-width: 0;
+  max-width: none;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 16%);
+  border-radius: 8px;
+  background: rgb(var(--ulka-backdrop) / 90%);
+  box-shadow: 0 32px 33px -15px rgb(10 9 11 / 17%), 0 0 3px -1px rgb(10 9 11 / 4%);
+}
+@container (width >= 48rem) { .ulka-player .shaka-player-ui-thumbnail-container { bottom: calc(100% + 37px); width: 156px; } }
+.ulka-player .shaka-player-ui-thumbnail-container[data-empty] { visibility: hidden; }
+.ulka-player .shaka-player-ui-thumbnail-image-container { border: 0; border-radius: 0; }
+/* The sprite keeps its own size (Shaka moves and scales it to one tile); the page's img { max-width: 100% } squeezed it. */
+.ulka-player .shaka-player-ui-thumbnail-image { max-width: none; width: auto; height: auto; }
+.ulka-player .shaka-player-ui-thumbnail-time-container { display: none; }
+/* Tooltips: a glass pill 12px above the button, the label and its key. */
+.ulka-player .ulka-tip {
+  position: absolute;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-radius: 99px;
+  font-size: 13px;
+  white-space: nowrap;
+  pointer-events: none;
+  translate: -50% 0;
+  opacity: 0;
+  scale: .95;
+  filter: blur(4px);
+  transition: opacity 100ms var(--ulka-ease), scale 100ms var(--ulka-ease), filter 100ms var(--ulka-ease);
+}
+.ulka-player .ulka-tip[data-open] { opacity: 1; scale: 1; filter: none; }
+.ulka-player .ulka-tip-key[hidden] { display: none; }
+/* Indicators: the playback bubble in the middle, seeking at the sides, volume and toggles as a pill at the top. */
+.ulka-player .ulka-indicators { --ulka-glass-text: var(--ulka-text-shadow); --ulka-text-shadow: var(--ulka-pic-shadow); position: absolute; inset: 0; z-index: 20; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); place-items: center; color: var(--ulka-pic-fg); pointer-events: none; }
+.ulka-player :is(.ulka-ind-play, .ulka-ind-seek, .ulka-ind-pill) { opacity: 0; transition: opacity 200ms var(--ulka-ease), scale 200ms var(--ulka-ease), translate 200ms var(--ulka-ease), filter 200ms var(--ulka-ease); }
+.ulka-player :is(.ulka-ind-play, .ulka-ind-seek, .ulka-ind-pill)[data-open] { opacity: 1; scale: 1; translate: 0; filter: none; transition-duration: 100ms; transition-timing-function: var(--ulka-ease); }
+.ulka-player .ulka-ind-play { grid-area: 1 / 2; display: grid; place-items: center; padding: 24px; scale: .85; } /* the controls' liquid glass (player.css), as a circle */
+/* A phone in fullscreen: a quarter smaller, a 30px icon in a 66px circle. */
+@media (pointer: coarse) {
+  .ulka-player:is(:fullscreen, :-webkit-full-screen) .ulka-ind-play { padding: 18px; }
+  .ulka-player:is(:fullscreen, :-webkit-full-screen) .ulka-ind-play .ulka-ind-icon svg { width: 30.375px; height: 30.375px; }
+}
+.ulka-player .ulka-ind-play[data-status="play"] .ulka-ind-icon { translate: 1.5px; }
+.ulka-player .ulka-ind-seek { grid-area: 1 / 1; justify-self: start; display: grid; justify-items: center; gap: 4px; padding: 16px; text-shadow: var(--ulka-text-shadow); }
+.ulka-player .ulka-ind-seek[data-direction="forward"] { grid-column: 3; justify-self: end; }
+.ulka-player .ulka-ind-value { font-variant-numeric: tabular-nums; font-weight: 500; }
+@container (width >= 42rem) { .ulka-player .ulka-ind-seek { padding: 24px; } }
+/* The notice at the top (Figma: "Brightness", 47:2449 web and 47:2493 small): a liquid glass pill (player.css), its
+   top 12px under the top bar (76px down at 1440px; 8px, 40px down, small), with an icon and a level bar (volume: a
+   white 40% track, 80% level) or a short label. Web: 12px by 8px inside, 8px apart, a 20px icon, a 164×4 bar. Small:
+   a 20% tint, 8px by 6px, 6px apart, a 10px icon, a 116×2 bar. */
+.ulka-player .ulka-ind-pill {
+  position: absolute;
+  top: calc(var(--ulka-edge) + var(--ulka-top-h) + 8px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: rgb(0 0 0 / 20%);
+  color: var(--ulka-fg);
+  --ulka-text-shadow: var(--ulka-glass-text); /* the pill is glass, so it follows the theme */
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 10px;
+  translate: -50% -25%;
+  scale: .9;
+  filter: blur(8px);
+  transform-origin: top;
+}
+@container (width >= 48rem) {
+  .ulka-player .ulka-ind-pill { top: calc(var(--ulka-edge) + var(--ulka-top-h) + 12px); gap: 8px; padding: 8px 12px; background: var(--ulka-frost); font-size: 14px; line-height: 20px; }
+}
+.ulka-player .ulka-ind-pill[data-open] { translate: -50% 0; }
+.ulka-player .ulka-ind-pill .ulka-ind-icon svg { width: 10px; height: 10px; }
+@container (width >= 48rem) { .ulka-player .ulka-ind-pill .ulka-ind-icon svg { width: 20px; height: 20px; } }
+.ulka-player .ulka-ind-bar { display: none; width: 116px; height: 2px; border-radius: 1px; background: linear-gradient(rgb(255 255 255 / 80%), rgb(255 255 255 / 80%)) no-repeat 0 0 / var(--ulka-fill, 0%) 100%, rgb(255 255 255 / 40%); transition: background-size 150ms var(--ulka-ease); }
+@container (width >= 48rem) { .ulka-player .ulka-ind-bar { width: 164px; height: 4px; } }
+.ulka-player .ulka-ind-pill[data-kind="volume"] .ulka-ind-bar { display: block; }
+/* The level is the bar; its words stay for screen readers only. */
+.ulka-player .ulka-ind-pill[data-kind="volume"] .ulka-ind-value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+/* Waiting for video: after 300 ms (a quick seek shows nothing), the picture dims and softens behind a thin spinner in
+   the play indicator's glass circle. Shaka shows and hides the container with display, which restarts the fade. */
+.ulka-player .shaka-spinner-container { background: rgb(var(--ulka-backdrop) / 25%); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); animation: ulka-wait-in 200ms var(--ulka-ease) 300ms both; }
+@keyframes ulka-wait-in { from { opacity: 0; } }
+/* Indicator icons: Shaka's, 18px, and half as big again in the middle and at the sides. */
+.ulka-player .ulka-ind-icon svg { display: block; width: 18px; height: 18px; fill: currentColor; filter: drop-shadow(var(--ulka-text-shadow)); }
+.ulka-player .ulka-ind-seek .ulka-ind-icon svg { width: 27px; height: 27px; }
+/* The play bubble in the middle: one and a half times its first size, a 40.5px icon in an 88.5px circle. */
+.ulka-player .ulka-ind-play .ulka-ind-icon svg { width: 40.5px; height: 40.5px; }
+.ulka-player .ulka-ind-seek .ulka-ind-icon { transition: translate 200ms var(--ulka-ease); }
+.ulka-player .ulka-ind-seek:not([data-open])[data-direction="forward"] .ulka-ind-icon { translate: -60% 0; }
+.ulka-player .ulka-ind-seek:not([data-open])[data-direction="backward"] .ulka-ind-icon { translate: 60% 0; }
+.ulka-player .shaka-spinner { display: grid; place-items: center; width: auto; height: auto; padding: 14px; border-radius: 99px; background: rgb(var(--ulka-backdrop) / 35%); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); color: var(--ulka-pic-fg); }
+.ulka-player .shaka-spinner svg { display: block; width: 28px; height: 28px; filter: drop-shadow(var(--ulka-pic-shadow)); }
+.ulka-player .shaka-spinner :is(circle, path) { stroke-width: 3; stroke-linecap: round; }
+.ulka-player .shaka-spinner circle { stroke-opacity: .2; }
+@media (prefers-reduced-motion: reduce) { .ulka-player .shaka-spinner-container { animation-duration: 0s; } }

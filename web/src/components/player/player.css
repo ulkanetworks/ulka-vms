@@ -1,0 +1,425 @@
+/* The player (the Ulka player design in Figma, web and small player): Shaka's controls and the design's icons in
+   liquid glass pills along the bottom (skin/pills.ts groups them), with the back button, the title and casting in
+   glass along the top. The settings menu is menu.css, tooltips, the seek
+   preview and indicators are overlays.css; behaviour is skin/. Everything is scoped to .ulka-player. */
+.ulka-player {
+  --ulka-fg: #fff;
+  --ulka-surface: rgb(255 255 255 / 10%);
+  --ulka-hover: rgb(255 255 255 / 10%);
+  --ulka-muted: rgb(255 255 255 / 15%);
+  --ulka-line: rgb(255 255 255 / 8%);
+  --ulka-key-top: rgb(255 255 255 / 30%);
+  --ulka-key: rgb(255 255 255 / 16%);
+  --ulka-key-rim: rgb(255 255 255 / 18%);
+  --ulka-key-edge: rgb(0 0 0 / 38%);
+  --ulka-backdrop: 0 0 0;
+  --ulka-sticky: rgb(24 24 27 / 94%); /* a menu's pinned header over rows scrolled under it */
+  /* Tooltips and the indicator pill: frosted glass, the picture blurred through a 10% white tint. */
+  --ulka-glass: blur(24px) saturate(115%);
+  /* The pills, the back button, the title and the cast button: liquid glass. A 10% black tint, a 2px blur, dimmed 10%, its
+     shape drawn by light: white glints on two opposite corners of the rim, a dark hairline inside it, a soft shadow,
+     a faint inner ring (--ulka-ring), a blurred dark line low inside it and a white glow from the same two corners
+     (both pseudo-elements, under the controls). Only CSS, so every browser with backdrop-filter shows the same. */
+  --ulka-frost: rgb(0 0 0 / 10%);
+  --ulka-liquid: blur(2px) brightness(.9);
+  --ulka-rim: inset 2px -2px 1px -1px rgb(255 255 255 / 45%), inset -2px 2px 1px -1px rgb(255 255 255 / 45%), inset 6px -6px 1px -6px rgb(255 255 255 / 27.5%), inset -6px 6px 1px -6px rgb(255 255 255 / 27.5%), inset 0 0 2px rgb(0 0 0 / 80%), 0 0 0 1px rgb(51 51 51 / 8%), 0 4px 8px rgb(0 0 0 / 20%);
+  --ulka-glint: rgb(255 255 255 / 40%);
+  --ulka-line-rgb: 255 255 255; /* the seek bar's track, what has loaded and played, and the divider */
+  --ulka-shadow: 0 0 0 1px rgb(0 0 0 / 10%), 0 1px 3px 0 rgb(0 0 0 / 15%), 0 1px 2px -1px rgb(0 0 0 / 15%);
+  --ulka-inset: inset 0 1px 0 0 rgb(255 255 255 / 10%), inset 0 0 0 1px rgb(255 255 255 / 5%);
+  --ulka-text-shadow: 0 1px 0 rgb(0 0 0 / 15%);
+  /* What sits on the picture itself (indicators, the seek preview, the scrim) is white on black in either theme. */
+  --ulka-pic-fg: #fff;
+  --ulka-pic-shadow: 0 1px 2px rgb(0 0 0 / 45%);
+  --ulka-ease: cubic-bezier(0.23, 1, 0.32, 1); /* strong ease-out; the skin scripts read it too (motion in skin/context.ts) */
+  /* The small player's sizes (Figma: Small Player, 375×211); the web player's from 48rem below. */
+  --ulka-edge: 8px;
+  --ulka-bar-h: 64px; /* the controls' height: the timeline pill over the buttons' row (28px each), 8px apart; 48px from 48rem */
+  --ulka-btn: 28px; /* a button's box; its icon (--ulka-glyph) centred, so icons sit as the design spaces them (8px apart) */
+  --ulka-glyph: 20px;
+  --ulka-pill-h: 28px;
+  --ulka-top-h: 28px;
+  --ulka-cut: 1px; /* half the gap at each chapter in the seek bar */
+  --ulka-row-gap: 8px; /* between the timeline and the buttons (small); the pills' gap on web */
+  --shaka-font-color: var(--ulka-fg);
+  --shaka-font-color-secondary: rgb(255 255 255 / 65%); /* engines without color-mix() keep this */
+  --shaka-font-color-secondary: color-mix(in oklab, var(--ulka-fg) 65%, transparent);
+  --shaka-bg-menu: var(--ulka-surface);
+  --shaka-badge-active: var(--ulka-accent);
+  --shaka-thumb-color: #fff;
+  --shaka-thumb-size: 12px;
+  --shaka-track-h: 4px;
+  --shaka-font-size: 13px;
+  --shaka-font-size-sm: 13px;
+  --shaka-icon-size: var(--ulka-btn);
+  --shaka-icon-size-sm: 18px;
+  --shaka-icon-size-lg: 18px;
+  --shaka-controls-w: calc(100% - 2 * var(--ulka-edge));
+  container-type: inline-size;
+  font-size: 13px;
+  line-height: 1.5;
+  outline: 2px solid transparent;
+  outline-offset: -4px;
+  transition: outline-offset 100ms var(--ulka-ease), outline-color 100ms var(--ulka-ease);
+}
+.ulka-player.ulka-keys:focus-visible { outline-color: #fff; outline-offset: 2px; }
+.ulka-player[data-theme="light"] {
+  --ulka-fg: #18181b;
+  --ulka-surface: rgb(255 255 255 / 65%);
+  --ulka-hover: rgb(0 0 0 / 7%);
+  --ulka-muted: rgb(0 0 0 / 8%);
+  --ulka-line: rgb(0 0 0 / 8%);
+  --ulka-key-top: rgb(255 255 255);
+  --ulka-key: rgb(244 244 245);
+  --ulka-key-rim: rgb(0 0 0 / 10%);
+  --ulka-key-edge: rgb(0 0 0 / 16%);
+  --ulka-text-shadow: none;
+  --ulka-line-rgb: 0 0 0;
+  --ulka-sticky: rgb(255 255 255 / 95%);
+  --shaka-thumb-color: #18181b;
+  --shaka-font-color-secondary: rgb(24 24 27 / 65%);
+  --shaka-font-color-secondary: color-mix(in oklab, var(--ulka-fg) 65%, transparent);
+}
+/* From 48rem the web player's sizes (Figma: Web Player, 1440×812): 48px pills, 40px buttons round 24px icons, 16px
+   text; 24px from the edges at its 90rem width. */
+@container (width >= 48rem) { .ulka-player > * { --ulka-edge: 16px; --ulka-bar-h: 48px; --ulka-btn: 40px; --ulka-glyph: 24px; --ulka-pill-h: 48px; --ulka-top-h: 40px; --ulka-cut: 2px; --ulka-row-gap: 16px; --shaka-controls-w: calc(100% - 2 * var(--ulka-edge)); } }
+@container (width >= 80rem) { .ulka-player > * { --ulka-edge: 24px; } }
+.ulka-player.shaka-video-container { font-family: inherit; }
+.ulka-player:not(:has(.shaka-controls-container[shown="true"])) { cursor: none; }
+/* No dimming over the picture: the glass carries the controls, as in the design. */
+.ulka-player .shaka-scrim-container { display: none; }
+/* Frosted glass for tooltips (menus are liquid glass, menu.css). */
+.ulka-player :is(.ulka-tip) {
+  background: var(--ulka-surface);
+  -webkit-backdrop-filter: var(--ulka-glass); backdrop-filter: var(--ulka-glass);
+  box-shadow: var(--ulka-shadow), var(--ulka-inset);
+  color: var(--ulka-fg);
+}
+/* Liquid glass: the pills, the back button, the title and the cast button. Each is its own stacking context
+   (backdrop-filter), so its layers at z-index -1 paint over its glass and under its controls, and each fades itself
+   (a glass inside a fading element loses its blur until the fade ends). */
+.ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .ulka-ind-pill, .ulka-ind-play, .shaka-big-buttons-container .shaka-play-button) {
+  --ulka-r: 100px;
+  --ulka-tr: 25%; /* how far the corner glow reaches along the diagonal */
+  position: relative;
+  box-sizing: border-box;
+  border-radius: var(--ulka-r);
+  background: var(--ulka-frost);
+  -webkit-backdrop-filter: var(--ulka-liquid); backdrop-filter: var(--ulka-liquid);
+  box-shadow: var(--ulka-rim);
+  color: var(--ulka-fg);
+}
+.ulka-player :is(.ulka-title, .ulka-pill-time) { --ulka-tr: 6%; }
+.ulka-player :is(.ulka-pill-play, .ulka-pill-tools, .ulka-chapter) { --ulka-tr: 15%; }
+/* The dark line, 35% down and blurred: it shades the lower inside and casts a little below. */
+.ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .ulka-ind-pill, .ulka-ind-play, .shaka-big-buttons-container .shaka-play-button)::before {
+  content: "";
+  position: absolute;
+  top: 35%;
+  left: 8px;
+  right: 8px;
+  z-index: -1;
+  height: calc(100% - 16px);
+  border: 1px solid rgb(0 0 0 / 90%);
+  border-radius: var(--ulka-r);
+  filter: blur(8px);
+  pointer-events: none;
+}
+/* The glow from two opposite corners. */
+.ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .ulka-ind-pill, .ulka-ind-play, .shaka-big-buttons-container .shaka-play-button)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: var(--ulka-r);
+  background: linear-gradient(45deg, var(--ulka-glint) 0%, transparent var(--ulka-tr), transparent calc(100% - var(--ulka-tr)), var(--ulka-glint) 100%);
+  filter: blur(7px);
+  pointer-events: none;
+}
+/* The faint inner ring, 4.5px in. */
+.ulka-player .ulka-ring {
+  content: "";
+  position: absolute;
+  inset: 4.5px;
+  z-index: -1;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: var(--ulka-r);
+  filter: blur(1px);
+  pointer-events: none;
+}
+/* The controls: the pills in one row (web), or the timeline pill over a row of play and volume, the chapter and the
+   tools (small). The row itself is clear; each pill fades in and out on its own. */
+.ulka-player .shaka-bottom-controls {
+  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 6px;
+  margin-bottom: var(--ulka-edge);
+  padding: 0;
+  text-shadow: var(--ulka-text-shadow);
+}
+@container (width >= 48rem) { .ulka-player .shaka-bottom-controls { flex-wrap: nowrap; gap: 16px; } }
+.ulka-player .ulka-pill {
+  display: flex;
+  flex: none;
+  align-items: center;
+  width: auto; /* Shaka sizes every item of its panel as a button */
+  height: var(--ulka-pill-h);
+  line-height: normal;
+  cursor: auto;
+  opacity: 0;
+  translate: 0 4px;
+  scale: .95;
+  filter: blur(8px);
+  transition: opacity 100ms var(--ulka-ease), translate 100ms var(--ulka-ease), scale 100ms var(--ulka-ease), filter 100ms var(--ulka-ease);
+}
+.ulka-player .shaka-controls-container:is([shown="true"], [casting="true"]) .ulka-pill { opacity: 1; translate: 0; scale: 1; filter: none; transition-duration: 50ms; }
+.ulka-player .shaka-controls-button-panel { display: contents; }
+/* Small: the timeline across the top of the controls; play and volume left, the chapter and the tools right. */
+.ulka-player .ulka-pill-time { order: -1; flex: 1 0 100%; gap: 8px; padding: 0 8px; }
+.ulka-player .ulka-pill-play { margin-right: auto; padding: 0 4px; }
+.ulka-player .ulka-pill-tools { padding: 0 4px; }
+.ulka-player .ulka-skip { display: none !important; }
+/* Web: play, the skips and volume; the timeline filling the row; the chapter; the tools. */
+@container (width >= 48rem) {
+  .ulka-player .ulka-pill-time { order: 0; flex: 1 1 auto; min-width: 0; gap: 12px; height: var(--ulka-pill-h); padding: 0 16px; }
+  .ulka-player .ulka-pill-play { margin-right: 0; padding: 0 8px; }
+  .ulka-player .ulka-pill-tools { padding: 0 8px; }
+  .ulka-player .ulka-skip { display: grid !important; }
+}
+/* Shaka shades every bar item itself; ours follows the theme (none in light). */
+.ulka-player .ulka-pill > *, .ulka-player .ulka-pill .shaka-mute-button { text-shadow: var(--ulka-text-shadow); }
+.ulka-player .shaka-spacer { display: none; }
+/* Buttons: 40px circles round a 24px icon (24px round 16px in the small player), a faint fill on hover. */
+/* (Not the chapter pill: it is a button, but fades and sizes as a pill.) */
+.ulka-player :is(.shaka-bottom-controls, .ulka-cast) button:not(.ulka-time, .ulka-chapter) {
+  display: grid;
+  place-items: center;
+  width: var(--ulka-btn);
+  height: var(--ulka-btn);
+  padding: 0;
+  border-radius: 99px;
+  opacity: 1;
+  color: var(--ulka-fg);
+  transition: background-color 150ms var(--ulka-ease), scale 150ms var(--ulka-ease);
+}
+/* The gear stays lit only while its menu shows: Shaka leaves aria-expanded="true" after the menu closes. */
+@media (hover: hover) { .ulka-player :is(.shaka-bottom-controls, .ulka-cast) button:not(.ulka-time, .ulka-chapter):hover { background: var(--ulka-hover); } }
+.ulka-player:has(.shaka-overflow-menu:not(.shaka-hidden)) .shaka-overflow-menu-button { background: var(--ulka-hover); }
+.ulka-player :is(.shaka-bottom-controls, .ulka-cast) button:not(.ulka-time, .ulka-chapter):active { scale: .97; }
+.ulka-player.ulka-keys :is(.shaka-bottom-controls, .ulka-cast) button:focus-visible { outline: 2px solid var(--ulka-fg); outline-offset: 2px; }
+.ulka-player, .ulka-player :is(button, input) { -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+/* iOS Safari: keep the bar steady while the address bar slides (its own compositing layer). */
+@supports (-webkit-touch-callout: none) {
+  .ulka-player .shaka-bottom-controls { -webkit-backface-visibility: hidden; backface-visibility: hidden; }
+}
+.ulka-player :is(.shaka-bottom-controls, .ulka-cast) button svg { width: var(--ulka-glyph); height: var(--ulka-glyph); filter: drop-shadow(var(--ulka-text-shadow)); }
+/* Our icons (icons.ts, as masks set by skin/index.ts) in place of Shaka's, chosen by the button's state. Exit
+   fullscreen and captions keep Shaka's; casting is the design's cast icon, AirPlay included. */
+.ulka-player :is(.shaka-bottom-controls, .ulka-cast) :is(.shaka-play-button, .shaka-mute-button, .shaka-overflow-menu-button, .shaka-pip-button, .shaka-fullscreen-button:not([aria-pressed="true"]), .shaka-remote-button) > svg { display: none; }
+.ulka-player :is(.shaka-bottom-controls, .ulka-cast) :is(.shaka-play-button, .shaka-mute-button, .shaka-overflow-menu-button, .shaka-pip-button, .shaka-fullscreen-button:not([aria-pressed="true"]), .shaka-remote-button)::before {
+  content: "";
+  width: var(--ulka-glyph);
+  height: var(--ulka-glyph);
+  background: currentColor;
+  -webkit-mask: var(--ulka-icon) center / contain no-repeat; mask: var(--ulka-icon) center / contain no-repeat;
+  filter: drop-shadow(var(--ulka-text-shadow));
+}
+.ulka-player .shaka-play-button { --ulka-icon: var(--ulka-i-play); }
+.ulka-player .shaka-play-button[aria-label="Pause"] { --ulka-icon: var(--ulka-i-pause); }
+.ulka-player .shaka-mute-button { --ulka-icon: var(--ulka-i-volume); }
+.ulka-player .shaka-mute-button[aria-pressed="true"] { --ulka-icon: var(--ulka-i-volumeOff); }
+.ulka-player .shaka-overflow-menu-button { --ulka-icon: var(--ulka-i-settings); }
+.ulka-player[data-no-settings] .shaka-bottom-controls .shaka-overflow-menu-button { display: none; }
+.ulka-player .shaka-pip-button { --ulka-icon: var(--ulka-i-pictureInPicture); }
+.ulka-player .shaka-fullscreen-button { --ulka-icon: var(--ulka-i-fullscreen); }
+.ulka-player .shaka-remote-button { --ulka-icon: var(--ulka-i-cast); }
+.ulka-player .ulka-skip svg { width: var(--ulka-glyph); height: var(--ulka-glyph); }
+.ulka-player :is(.shaka-overflow-quality-mark, .shaka-overflow-playback-rate-mark, .shaka-current-quality-mark) { display: none !important; } /* "(1080p)" already says it */
+/* Time either side of the seek bar: elapsed, then the length (click for what is left); 12px, 16px from 48rem. */
+.ulka-player .ulka-time { position: relative; width: auto; height: auto; margin: 0; padding: 0; border-radius: .25rem; background: none; color: var(--ulka-fg); font: inherit; font-size: 12px; line-height: 20px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ulka-player .ulka-current { text-align: start; }
+.ulka-player .ulka-remaining { text-align: end; cursor: pointer; }
+@container (width >= 48rem) { .ulka-player .ulka-time { font-size: 16px; line-height: 24px; } }
+.ulka-player .ulka-time[hidden] { display: none; }
+.ulka-player .ulka-time[data-unavailable] { opacity: .5; }
+.ulka-player .shaka-current-time { display: none; }
+/* Small players drop captions and keep the volume slider shut; every other button fits down to 320px. */
+@container (width < 24rem) { .ulka-player .shaka-mute-volume-container:hover .shaka-volume-bar-container { width: 0 !important; margin: 0; opacity: 0 !important; pointer-events: none; } }
+@container (width < 32rem) { .ulka-player .ulka-captions { display: none; } }
+/* Live: a red dot and "Live" where the time would be; grey while behind, pressable to catch up. */
+.ulka-player .shaka-bottom-controls button.ulka-live { display: flex; gap: 6px; width: auto; height: auto; padding: 0; font: inherit; font-size: 12px; line-height: 20px; font-weight: 600; cursor: pointer; }
+@container (width >= 48rem) { .ulka-player .shaka-bottom-controls button.ulka-live { font-size: 16px; line-height: 24px; } }
+@media (hover: hover) { .ulka-player .shaka-bottom-controls button.ulka-live:hover { background: none; } }
+.ulka-player .ulka-live::before { content: ""; width: 8px; height: 8px; border-radius: 99px; background: #ef4444; box-shadow: 0 0 0 3px rgb(239 68 68 / 25%); }
+.ulka-player .ulka-live[data-behind] { opacity: .7; }
+.ulka-player .ulka-live[data-behind]::before { background: currentColor; box-shadow: none; }
+.ulka-player .ulka-live[hidden] { display: none !important; }
+/* The seek bar: a 3px line (4px from 48rem) with 1px corners, cut 2px (4px) at each chapter; the track 20%, what has
+   loaded 40%, what has played 80% of the controls' colour; a small thumb while pointed at or held. */
+.ulka-player .shaka-seek-bar-container { flex: 1; min-width: 40px; top: 0; height: 3px; margin: 0; border: 0; border-radius: 1px; background: none !important; }
+@container (width >= 48rem) { .ulka-player .shaka-seek-bar-container { height: 4px; } }
+/* Each slider's grab area fills its own pill and no more: Shaka's 40px reached across the small player's rows, so
+   a press just under the timeline moved the volume. */
+.ulka-player .shaka-seek-bar { top: -12.5px; height: 28px; }
+.ulka-player .shaka-volume-bar { top: -12px; height: 28px; }
+@container (width >= 48rem) { .ulka-player .shaka-seek-bar { top: -22px; height: 48px; } .ulka-player .shaka-volume-bar { top: -22px; height: 48px; } }
+/* Our layers (skin/playhead.ts): the track with what has loaded, then what has played, moved every frame; both under the
+   thumb and cut at the chapters (--ulka-cuts). Played is clipped rather than scaled, so the cuts stay put. */
+.ulka-player .shaka-seek-bar-container::before,
+.ulka-player .shaka-seek-bar-container::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; -webkit-mask: var(--ulka-cuts, none); mask: var(--ulka-cuts, none); }
+.ulka-player .shaka-seek-bar-container::before { background: linear-gradient(to right, rgb(var(--ulka-line-rgb) / 40%) calc(var(--ulka-loaded, 0) * 100%), rgb(var(--ulka-line-rgb) / 20%) 0); }
+.ulka-player .shaka-seek-bar-container::after { background: rgb(var(--ulka-line-rgb) / 80%); clip-path: inset(0 calc(100% - var(--ulka-played, 0) * 100%) 0 0); }
+.ulka-player .shaka-seek-bar-container .shaka-range-element { z-index: 1; }
+/* Shaka hides the bar on live with little or no rewind: keep its space, or the right-hand buttons slide left. */
+.ulka-player .shaka-bottom-controls .shaka-seek-bar-container.shaka-hidden { display: block !important; visibility: hidden; pointer-events: none; }
+.ulka-player .shaka-range-element::-webkit-slider-thumb { box-shadow: 0 0 0 1px rgb(0 0 0 / 10%), 0 1px 3px 0 rgb(0 0 0 / 35%), 0 1px 2px -1px rgb(0 0 0 / 35%); transition: opacity 100ms var(--ulka-ease), scale 100ms var(--ulka-ease); }
+.ulka-player .shaka-range-element::-moz-range-thumb { box-shadow: 0 0 0 1px rgb(0 0 0 / 10%), 0 1px 3px 0 rgb(0 0 0 / 35%), 0 1px 2px -1px rgb(0 0 0 / 35%); transition: opacity 100ms var(--ulka-ease), scale 100ms var(--ulka-ease); }
+/* No thumb at rest: under the pointer the handle is the preview's (overlays.css). Only moving it by keyboard shows
+   Shaka's thumb, where the time is; a click leaves focus on the bar, which must not bring it back. */
+.ulka-player .shaka-seek-bar::-webkit-slider-thumb { width: 4px; height: 8px; border-radius: 18px; background: var(--ulka-fg); box-shadow: 0 0 2px rgb(0 0 0 / 30%); opacity: 0; }
+.ulka-player .shaka-seek-bar::-moz-range-thumb { width: 4px; height: 8px; border-radius: 18px; background: var(--ulka-fg); box-shadow: 0 0 2px rgb(0 0 0 / 30%); opacity: 0; }
+@container (width >= 48rem) { .ulka-player .shaka-seek-bar::-webkit-slider-thumb { width: 8px; height: 16px; } .ulka-player .shaka-seek-bar::-moz-range-thumb { width: 8px; height: 16px; } }
+.ulka-player.ulka-keys .shaka-seek-bar:focus-visible::-webkit-slider-thumb { opacity: 1; }
+.ulka-player.ulka-keys .shaka-seek-bar:focus-visible::-moz-range-thumb { opacity: 1; }
+/* Volume: hovering the mute button slides a slider out to its right. */
+.ulka-player .shaka-mute-volume-container { display: flex; align-items: center; }
+.ulka-player .shaka-mute-volume-container .shaka-volume-bar-container {
+  width: 0 !important;
+  height: 4px;
+  margin: 0;
+  opacity: 0 !important;
+  pointer-events: none; /* folded, it mustn't take the mute button's clicks */
+  transition: width 150ms var(--ulka-ease), margin 150ms var(--ulka-ease), opacity 150ms var(--ulka-ease);
+}
+/* 72px whatever Shaka says (it forces 100px while the slider itself is hovered); open while hovered or keyboard-focused. */
+.ulka-player .shaka-mute-volume-container:hover .shaka-volume-bar-container,
+.ulka-player.ulka-keys .shaka-mute-volume-container:has(:focus-visible) .shaka-volume-bar-container { width: 72px !important; margin: 0 12px; opacity: 1 !important; pointer-events: auto; }
+.ulka-player .shaka-volume-bar::-webkit-slider-thumb { opacity: 1; }
+@media (prefers-reduced-motion: reduce) {
+  /* Fades stay (they say what changed); movement, scaling and blur go. */
+  .ulka-player *, .ulka-player *::before, .ulka-player *::after { transition-property: opacity, color, background-color !important; }
+}
+/* People who ask for less transparency get solid surfaces. */
+@media (prefers-reduced-transparency: reduce) {
+  .ulka-player { --ulka-surface: rgb(24 24 27 / 92%); --ulka-frost: rgb(24 24 27 / 92%); --ulka-menu-frost: rgb(24 24 27 / 92%); --ulka-glass: none; --ulka-liquid: none; }
+  .ulka-player[data-theme="light"] { --ulka-surface: rgb(255 255 255 / 95%); }
+}
+/* The mute button and volume stay even when Shaka finds no sound track. */
+.ulka-player .shaka-mute-button.shaka-hidden { display: grid !important; }
+.ulka-player .shaka-volume-bar-container.shaka-hidden { display: block !important; }
+/* Ulka's mark, last in the bar, in the controls' colour and size: a link to ulka.co, lit like the buttons on hover. */
+.ulka-player .ulka-brand { display: grid; place-items: center; width: var(--ulka-btn); height: var(--ulka-btn); padding: 0; border-radius: 99px; color: var(--ulka-fg); transition: background-color 150ms var(--ulka-ease); }
+@media (hover: hover) { .ulka-player .ulka-brand:hover { background: var(--ulka-hover); } }
+.ulka-player.ulka-keys .ulka-brand:focus-visible { outline: 2px solid var(--ulka-fg); outline-offset: 2px; }
+.ulka-player .ulka-brand:focus { outline: 0; }
+.ulka-player .ulka-brand svg { width: var(--ulka-glyph); height: var(--ulka-glyph); }
+/* The chapter playing now and a chevron, in its own pill (a button: it opens the Chapters page). 12px text sized to
+   itself (cut short with … when the row is tight), a 12px chevron; 16px text and an 18px chevron from 48rem, where it
+   leaves the row under 60rem. */
+/* Small: never wider than the room the play and tools pills leave (64px + 120px + two 6px gaps), so the row doesn't wrap. */
+.ulka-player .shaka-bottom-controls button.ulka-chapter { max-width: calc(100% - 196px); }
+@container (width >= 48rem) { .ulka-player .shaka-bottom-controls button.ulka-chapter { max-width: none; } }
+.ulka-player .shaka-bottom-controls button.ulka-chapter { display: flex; flex: 0 1 auto; gap: 4px; width: auto; min-width: 0; height: var(--ulka-pill-h); padding: 0 6px 0 8px; border: 0; border-radius: var(--ulka-r); font: inherit; font-size: 12px; line-height: 20px; cursor: pointer; }
+.ulka-player .shaka-bottom-controls button.ulka-chapter[hidden] { display: none; }
+@media (hover: hover) { .ulka-player .shaka-bottom-controls button.ulka-chapter:hover { background: rgb(0 0 0 / 4%); } }
+.ulka-player .shaka-bottom-controls button.ulka-chapter:active { scale: .97; }
+.ulka-player .shaka-bottom-controls .ulka-chapter .ulka-chapter-name { flex: 0 1 auto; min-width: 0; overflow: hidden; text-align: start; text-overflow: ellipsis; white-space: nowrap; }
+.ulka-player .shaka-bottom-controls .ulka-chapter svg { flex: none; width: 12px; height: 12px; }
+@container (width >= 48rem) {
+  .ulka-player .shaka-bottom-controls button.ulka-chapter { flex: none; padding: 0 16px; font-size: 16px; line-height: 24px; }
+  .ulka-player .ulka-chapter-name { max-width: 16rem; }
+  .ulka-player .shaka-bottom-controls .ulka-chapter svg { width: 18px; height: 18px; }
+}
+@container (48rem <= width < 60rem) { .ulka-player .shaka-bottom-controls button.ulka-chapter { display: none; } }
+/* Along the top: the back button (web) and the title on the left, the cast button on the right, each in glass and
+   coming and going with the controls. 40px tall from 48rem; 28px below, where the title is 12px and there is no back. */
+.ulka-player .ulka-top {
+  position: absolute;
+  top: var(--ulka-edge);
+  left: var(--ulka-edge);
+  right: var(--ulka-edge);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+.ulka-player[data-controls="false"] .ulka-top { display: none; }
+.ulka-player[data-logo] .ulka-top { right: calc(var(--ulka-edge) + 112px); } /* the library's logo sits top right */
+@container (width >= 48rem) { .ulka-player .ulka-top { gap: 16px; } }
+.ulka-player .ulka-top > * {
+  opacity: 0;
+  translate: 0 -4px;
+  transition: opacity 100ms var(--ulka-ease), translate 100ms var(--ulka-ease), scale 250ms var(--ulka-ease);
+}
+.ulka-player:has(.shaka-controls-container:is([shown="true"], [casting="true"])) .ulka-top > * { opacity: 1; translate: 0; pointer-events: auto; transition-duration: 50ms, 50ms, 250ms; }
+.ulka-player .ulka-back {
+  display: none;
+  flex: none;
+  place-items: center;
+  width: var(--ulka-top-h);
+  height: var(--ulka-top-h);
+  padding: 0;
+  border: 0;
+  cursor: pointer;
+}
+@container (width >= 48rem) { .ulka-player .ulka-back { display: grid; } }
+.ulka-player .ulka-back svg { width: var(--ulka-glyph); height: var(--ulka-glyph); }
+/* Pointed at, the glass clears and lifts 3px; pressed, it gives a little. */
+@media (hover: hover) { .ulka-player:has(.shaka-controls-container[shown="true"]) .ulka-back:hover { background: transparent; translate: 0 -3px; } }
+.ulka-player .ulka-back:active { scale: .94; }
+.ulka-player.ulka-keys .ulka-back:focus-visible { outline: 2px solid var(--ulka-fg); outline-offset: 2px; }
+.ulka-player .ulka-back:focus { outline: 0; }
+.ulka-player .ulka-title {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  min-width: 0;
+  height: var(--ulka-top-h);
+  padding: 0 8px;
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 500;
+  text-shadow: var(--ulka-text-shadow);
+}
+.ulka-player .ulka-title > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@container (width >= 48rem) { .ulka-player .ulka-title { padding: 0 16px; font-size: 16px; line-height: 24px; } }
+/* Casting: round, at the far right, only while Shaka offers its button (a device is near). */
+.ulka-player .ulka-cast { display: grid; flex: none; place-items: center; width: var(--ulka-top-h); height: var(--ulka-top-h); margin-left: auto; }
+.ulka-player .ulka-cast:not(:has(> .shaka-remote-button:not(.shaka-hidden))) { display: none; }
+.ulka-player .ulka-cast { --ulka-glyph: 16px; } /* the small player's cast icon stays 16px in its 28px circle */
+@container (width >= 48rem) { .ulka-player .ulka-cast { --ulka-glyph: 24px; } }
+.ulka-player .ulka-cast .shaka-overflow-menu-only { display: none; } /* its label, for when it sits in a menu */
+.ulka-player .ulka-cast button { width: var(--ulka-top-h) !important; height: var(--ulka-top-h) !important; border: 0; background: none; cursor: pointer; }
+/* Captions rise above the bar while it shows, and drop back when it hides. */
+.ulka-player .shaka-text-container { transition: translate 100ms var(--ulka-ease); }
+.ulka-player:has(.shaka-controls-container[shown="true"]) .shaka-text-container { translate: 0 calc(-12px - var(--ulka-bar-h)); }
+/* Touch screens can't hover, so the volume slider stays away there; the mute button remains. */
+@media (pointer: coarse) { .ulka-player .shaka-mute-volume-container .shaka-volume-bar-container { display: none !important; } }
+/* Devices that can't blur what is behind an element (old browsers) get plain surfaces with no effect at all: 80%
+   black, white controls, no rim, glow, ring or shadow. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .ulka-player { --ulka-fg: #fff; --ulka-line-rgb: 255 255 255; --ulka-sticky: rgb(0 0 0 / 80%); }
+  .ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .shaka-overflow-menu, .shaka-context-menu, .ulka-menu, .ulka-tip, .ulka-ind-pill, .ulka-ind-play, .ulka-preview-label, .shaka-big-buttons-container .shaka-play-button) { background: rgb(0 0 0 / 80%) !important; box-shadow: none !important; }
+  .ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .ulka-ind-pill, .ulka-ind-play, .shaka-big-buttons-container .shaka-play-button)::before,
+  .ulka-player :is(.ulka-pill, .ulka-back, .ulka-title, .ulka-cast, .ulka-ind-pill, .ulka-ind-play, .shaka-big-buttons-container .shaka-play-button)::after,
+  .ulka-player .ulka-ring { display: none !important; }
+  .ulka-player :is(.shaka-overflow-menu, .shaka-context-menu, .ulka-menu) { outline: 0 !important; }
+}
+/* Phones: Shaka's big play/pause button in the middle (its mobile mode), in the controls' liquid glass with the
+   design's icons, 12.5% of the player's width as Shaka sizes it; a quarter smaller in fullscreen. */
+.ulka-player .shaka-big-buttons-container .shaka-play-button:not(.shaka-hidden) { display: grid; place-items: center; }
+.ulka-player .shaka-big-buttons-container .shaka-play-button > svg { display: none; }
+.ulka-player .shaka-big-buttons-container .ulka-big-icon {
+  height: 46%;
+  aspect-ratio: 1; /* a % width in the button's auto-sized grid track would be 0 */
+  background: currentColor;
+  -webkit-mask: var(--ulka-i-play) center / contain no-repeat; mask: var(--ulka-i-play) center / contain no-repeat;
+  translate: 3% 0; /* the triangle's weight sits left of its box */
+}
+.ulka-player .shaka-big-buttons-container .shaka-play-button[aria-label="Pause"] .ulka-big-icon { --ulka-i-play: var(--ulka-i-pause); translate: 0; }
+@media (hover: hover) { .ulka-player .shaka-big-buttons-container .shaka-play-button:not([disabled]):hover { background: rgb(0 0 0 / 18%); } }
+.ulka-player:is(:fullscreen, :-webkit-full-screen) .shaka-big-buttons-container .shaka-play-button { width: 9.375%; }

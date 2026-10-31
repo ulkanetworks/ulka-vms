@@ -1,0 +1,283 @@
+/* Every menu (settings, right-click) is the controls' liquid glass (player.css): a 25% black tint over a 2px blur
+   dimmed 10%, the rim's corner glints (a quarter of the pills') and dark hairline, a white glow from two opposite corners, a dark line low
+   inside and a faint ring 4.5px in. A menu scrolls, so these are its own background, shadow and outline rather
+   than layers inside it, which would scroll away with the rows. */
+.ulka-player :is(.shaka-overflow-menu, .shaka-context-menu, .ulka-menu) {
+  --ulka-menu-tr: 15%;
+  /* A darker tint than the pills (25% black, for reading), and corner light a quarter of the pills'. */
+  --ulka-menu-glint: rgb(255 255 255 / 10%);
+  --ulka-menu-rim: inset 2px -2px 1px -1px rgb(255 255 255 / 11.25%), inset -2px 2px 1px -1px rgb(255 255 255 / 11.25%), inset 6px -6px 1px -6px rgb(255 255 255 / 6.875%), inset -6px 6px 1px -6px rgb(255 255 255 / 6.875%), inset 0 0 2px rgb(0 0 0 / 80%), 0 0 0 1px rgb(51 51 51 / 8%), 0 4px 8px rgb(0 0 0 / 20%);
+  background: linear-gradient(45deg, var(--ulka-menu-glint) 0%, transparent var(--ulka-menu-tr), transparent calc(100% - var(--ulka-menu-tr)), var(--ulka-menu-glint) 100%) no-repeat, var(--ulka-menu-frost, rgb(0 0 0 / 25%));
+  -webkit-backdrop-filter: var(--ulka-liquid); backdrop-filter: var(--ulka-liquid);
+  box-shadow: var(--ulka-menu-rim), inset 0 -12px 18px -12px rgb(0 0 0 / 45%);
+  outline: 1px solid rgb(255 255 255 / 20%);
+  outline-offset: -5.5px;
+}
+/* Menus (Figma: Menus, node 47:3036): a 272px glass card, 16px corners, 10px inside; rows 36px with 8px corners,
+   an 18px icon, 14px text, a 16% white fill under the pointer. The settings card shows its pages inside it
+   (skin/menu.ts animates the change and writes the design's words). Where it sits (Figma node 47:3566): web,
+   24px from the right and 96px from the bottom at 1440px; the small player, all of it but 8px around; a phone in
+   fullscreen, 48px from the right and 56px from the bottom. */
+.ulka-player :is(.shaka-overflow-menu, .shaka-context-menu) {
+  --ulka-menu-pad: 10px;
+  --ulka-menu-radius: 16px;
+  min-width: 0;
+  padding: var(--ulka-menu-pad);
+  gap: 0;
+  border: 0;
+  border-radius: var(--ulka-menu-radius);
+  font-size: 14px;
+  text-shadow: var(--ulka-text-shadow);
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+}
+.ulka-player .shaka-overflow-menu {
+  /* Shaka writes its own left or right inline, to sit by the gear; the design's place wins. */
+  top: auto !important;
+  bottom: calc(var(--ulka-edge) + var(--ulka-bar-h) + 24px) !important;
+  left: auto !important;
+  right: var(--ulka-edge) !important;
+  width: min(272px, calc(100% - 2 * var(--ulka-edge)));
+  max-width: none;
+  /* A long page scrolls inside the card. Shaka sets its own limit inline from the video's height, so ours needs
+     !important; it fits the room above the controls, edge to edge. */
+  max-height: calc(100% - var(--ulka-bar-h) - 2 * var(--ulka-edge) - 24px) !important;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  box-sizing: border-box;
+  opacity: 1;
+  translate: 0;
+  transition: opacity 220ms var(--ulka-ease), translate 220ms var(--ulka-ease);
+}
+/* The small player: the menu covers it, 8px in from every side. */
+@container (width < 48rem) {
+  .ulka-player .shaka-overflow-menu { inset: 8px !important; width: auto; height: auto; max-height: none !important; }
+}
+/* The small player's menus are darker, 40% black, since they cover the picture. */
+@media not (prefers-reduced-transparency: reduce) {
+  @container (width < 48rem) { .ulka-player :is(.shaka-overflow-menu, .shaka-context-menu, .ulka-menu) { --ulka-menu-frost: rgb(0 0 0 / 40%); } }
+}
+/* Covered by the menu, the small player's top bar steps aside while it is open. */
+@container (width < 48rem) { .ulka-player:not(:fullscreen):has(.shaka-overflow-menu:not(.shaka-hidden)) .ulka-top > * { opacity: 0 !important; pointer-events: none !important; } }
+/* A phone in fullscreen: a card, not a cover, lined up with the controls' right edge and sitting above the timeline
+   by the same gap as between the timeline and the buttons (8px small, 16px web), in either layout. */
+@media (pointer: coarse) {
+  .ulka-player:is(:fullscreen, :-webkit-full-screen) .shaka-overflow-menu {
+    inset: auto var(--ulka-edge) calc(var(--ulka-edge) + var(--ulka-bar-h) + var(--ulka-row-gap)) auto !important;
+    width: min(272px, calc(100% - 2 * var(--ulka-edge)));
+    max-height: calc(100% - var(--ulka-bar-h) - 2 * var(--ulka-edge) - var(--ulka-row-gap)) !important;
+  }
+}
+/* Opening rises 24px into place as it fades in; closing is the same in reverse (a copy, skin/menu.ts). */
+@starting-style {
+  .ulka-player .shaka-overflow-menu { opacity: 0; translate: 0 24px; }
+}
+.ulka-player .ulka-menu-leaving { pointer-events: none; }
+.ulka-player .shaka-overflow-menu[data-moving] { overflow: hidden; }
+.ulka-player .ulka-menu-ghost { position: absolute; left: 0; right: 0; display: flex; flex-direction: column; box-sizing: border-box; padding: var(--ulka-menu-pad); pointer-events: none; }
+.ulka-player .shaka-sub-menu { min-width: 0; gap: 0; padding: 0; background: none; }
+
+/* Rows: 36px, 8px inside and between their parts, 8px corners. */
+.ulka-player :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 36px;
+  min-height: 36px;
+  margin: 0;
+  padding: 8px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  color: var(--ulka-fg);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 20px;
+  letter-spacing: -.01em;
+  font-variant-numeric: tabular-nums;
+  transition: background-color 150ms var(--ulka-ease);
+}
+@media (hover: hover) {
+  .ulka-player :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button:hover { background: rgb(255 255 255 / 16%); }
+}
+.ulka-player.ulka-keys :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button:focus-visible { background: rgb(255 255 255 / 16%); }
+.ulka-player :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button:focus { outline: 0; }
+/* Shaka focuses a page's first row as it opens and paints focused rows; only hover or our keyboard focus light a row. */
+.ulka-player:not(.ulka-keys) :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button:focus:not(:hover) { background: transparent !important; }
+.ulka-player :is(.shaka-overflow-menu, .shaka-sub-menu, .shaka-context-menu) button > svg { flex: none; width: 18px; height: 18px; padding: 0; }
+.ulka-player .shaka-context-menu button > :is(span, label) { margin: 0; }
+
+/* The first page: icon, name (medium, -2%), the value at 80% and a chevron. Quality, Subtitle, Playback Speed and
+   Chapters take the design's icons; Audio keeps Shaka's. */
+.ulka-player .shaka-overflow-menu > .shaka-overflow-button { font-weight: 500; }
+.ulka-player .shaka-overflow-menu > :is(.shaka-resolution-button, .shaka-caption-button, .shaka-playbackrate-button, .shaka-chapter-button) > svg { display: none; }
+.ulka-player .shaka-overflow-menu > :is(.shaka-resolution-button, .shaka-caption-button, .shaka-playbackrate-button, .shaka-chapter-button)::before {
+  content: "";
+  flex: none;
+  width: 18px;
+  height: 18px;
+  background: currentColor;
+  -webkit-mask: var(--ulka-row-icon) center / contain no-repeat; mask: var(--ulka-row-icon) center / contain no-repeat;
+}
+.ulka-player .shaka-resolution-button { --ulka-row-icon: var(--ulka-i-quality); }
+.ulka-player .shaka-caption-button { --ulka-row-icon: var(--ulka-i-subtitle); }
+.ulka-player .shaka-playbackrate-button { --ulka-row-icon: var(--ulka-i-speed); }
+.ulka-player .shaka-chapter-button { --ulka-row-icon: var(--ulka-i-chapters); }
+.ulka-player .shaka-overflow-button-label-inline { display: flex; flex: 1; align-items: center; gap: 8px; width: auto; min-width: 0; padding-right: 0; }
+.ulka-player .shaka-overflow-button-label-inline > span:first-child { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -.02em; }
+.ulka-player .shaka-overflow-menu .shaka-current-selection-span { margin-left: auto; color: var(--ulka-fg); opacity: .8; font-weight: 400; }
+.ulka-player .shaka-overflow-button-label-inline > span:not(:first-child) { font-weight: 400; opacity: .8; }
+/* "Auto (720p)": Shaka writes the quality Auto plays beside "Auto" with no space or brackets. */
+.ulka-player .shaka-overflow-menu .shaka-current-auto-quality { margin-left: .3em; color: var(--ulka-fg); }
+.ulka-player .shaka-overflow-menu .shaka-current-auto-quality:not(:empty)::before { content: "("; }
+.ulka-player .shaka-overflow-menu .shaka-current-auto-quality:not(:empty)::after { content: ")"; }
+.ulka-player .shaka-overflow-button-label-inline::after { content: ""; position: static !important; inset: auto !important; flex: none; width: 18px; height: 18px; margin: 0; translate: none; transform: none; background-color: var(--ulka-fg); -webkit-mask: var(--ulka-i-chevronRight) center / contain no-repeat; mask: var(--ulka-i-chevronRight) center / contain no-repeat; }
+/* The small player's "‹ Settings", which closes the menu; only on its first page (skin/menu.ts adds it). */
+.ulka-player .ulka-menu-head { display: none !important; font-weight: 600 !important; letter-spacing: -.02em !important; }
+.ulka-player .ulka-menu-head::before { content: ""; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ulka-i-chevronLeft) center / contain no-repeat; mask: var(--ulka-i-chevronLeft) center / contain no-repeat; }
+@container (width < 48rem) { .ulka-player:not(:fullscreen) .shaka-overflow-menu:not(:has(> .shaka-sub-menu:not(.shaka-hidden))) > .ulka-menu-head { display: flex !important; } } /* fullscreen: a card, not a cover */
+
+/* A page: "‹ Title" (semibold, -2%), then the options, each with a check before it when chosen. */
+.ulka-player .shaka-back-to-overflow-button { position: static; gap: 8px !important; margin: 0 !important; border-bottom: 0 !important; border-radius: 8px !important; font-weight: 600 !important; letter-spacing: -.02em !important; }
+/* The title scrolls with its page, so no band ever forms under it. */
+.ulka-player .shaka-back-to-overflow-button > svg { display: none; }
+.ulka-player .shaka-back-to-overflow-button::before { content: ""; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ulka-i-chevronLeft) center / contain no-repeat; mask: var(--ulka-i-chevronLeft) center / contain no-repeat; }
+.ulka-player .shaka-sub-menu span { margin-left: 0; }
+.ulka-player :is(.shaka-sub-menu .shaka-quality-mark, .shaka-quality-mark) { display: none !important; } /* no HD/4K marks in the design */
+.ulka-player .shaka-sub-menu .shaka-chosen-item:is(svg) { display: none; }
+.ulka-player .shaka-sub-menu [role="menuitemradio"]::before { content: ""; order: -1; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ulka-i-check) center / contain no-repeat; mask: var(--ulka-i-check) center / contain no-repeat; opacity: 0; }
+.ulka-player .shaka-sub-menu [role="menuitemradio"]:is([aria-checked="true"], .shaka-chosen-item)::before { opacity: 1; }
+.ulka-player .shaka-sub-menu [role="menuitemradio"] > span { flex: 1; min-width: 0; }
+
+/* Playback Speed: a plain list (0.25x … 2x) in place of Shaka's slider and pills; Shaka forces those with !important. */
+.ulka-player .shaka-playback-rates { min-width: 0; }
+.ulka-player .shaka-playback-rate-slider-section { display: none; }
+.ulka-player .shaka-playback-rate-presets { display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; }
+.ulka-player .shaka-playback-rate-preset-btn {
+  justify-content: flex-start !important;
+  width: 100%;
+  padding: 8px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: transparent !important;
+  font-size: 0 !important;
+}
+@media (hover: hover) { .ulka-player .shaka-playback-rate-preset-btn:hover { background: rgb(255 255 255 / 16%) !important; } }
+.ulka-player.ulka-keys .shaka-playback-rate-preset-btn:focus-visible { background: rgb(255 255 255 / 16%) !important; }
+.ulka-player .shaka-playback-rate-preset-btn::after { content: attr(data-rate) "x"; font-size: 14px; line-height: 20px; }
+
+/* Chapters: 52px rows, a 64×36 picture with 6px corners, the title (medium, cut short with …) over its start
+   (10px, 80%); the chapter playing now lit. Shaka crops the storyboard picture for a 60px width, so the box is
+   60px and zoomed to 64. */
+.ulka-player .shaka-chapters .shaka-chapter-item { display: grid; grid-template-columns: auto minmax(0, 1fr); grid-template-rows: 20px 14px; align-content: start; column-gap: 8px; row-gap: 0; height: 52px; min-height: 52px; text-align: start; }
+.ulka-player .shaka-chapters .shaka-chapter-item[data-current] { background: rgb(255 255 255 / 16%); }
+.ulka-player .shaka-chapter-thumbnail { grid-row: 1 / 3; position: relative; overflow: hidden; width: 60px; height: 33.75px; margin: 0; border-radius: calc(6px * 60 / 64); zoom: calc(64 / 60); background: rgb(255 255 255 / 85%); }
+.ulka-player .shaka-chapter-thumbnail img { max-width: none; } /* the sprite keeps its size: Shaka scales and moves it to one tile */
+.ulka-player .shaka-chapters .shaka-chapter { grid-column: 2; margin: 0; overflow: hidden; font-weight: 500; letter-spacing: -.02em; text-overflow: ellipsis; white-space: nowrap; }
+.ulka-player .ulka-chapter-start { grid-column: 2; font-size: 10px; line-height: 14px; letter-spacing: 0; opacity: .8; }
+
+/* The right-click menu: the same card where Shaka puts it. */
+.ulka-player .shaka-context-menu { min-width: 200px; }
+
+/* Our right-click menu (skin/contextmenu.ts): the same card, rows, chevrons and divider as the settings menu. */
+.ulka-player .ulka-menu {
+  --ulka-menu-pad: 10px;
+  --ulka-menu-radius: 16px;
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  width: min(272px, calc(100% - 16px));
+  /* Never taller than the player: a long page (About, Keyboard shortcuts) scrolls inside the card. */
+  max-height: calc(100% - 16px);
+  box-sizing: border-box;
+  padding: var(--ulka-menu-pad);
+  overflow: hidden auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  border-radius: var(--ulka-menu-radius);
+  color: var(--ulka-fg);
+  font-size: 14px;
+  text-shadow: var(--ulka-text-shadow);
+  transform-origin: top left;
+}
+.ulka-player :is(.ulka-menu, .ulka-menu-page)[hidden] { display: none; }
+.ulka-player .ulka-menu-page { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ulka-player .ulka-menu .ulka-menu-back { position: static; } /* scrolls with its page: no band under it */
+/* Leading icons, a check on Loop while it is on, and a hairline between Loop and the pages. */
+.ulka-player .ulka-menu-row[data-icon]::before { content: ""; flex: none; width: 18px; height: 18px; background: currentColor; -webkit-mask: var(--ulka-row-icon) center / contain no-repeat; mask: var(--ulka-row-icon) center / contain no-repeat; opacity: .9; }
+.ulka-player .ulka-menu-row[data-icon="loop"] { --ulka-row-icon: var(--ulka-i-loop); }
+.ulka-player .ulka-menu-row[data-icon="info"] { --ulka-row-icon: var(--ulka-i-info); }
+.ulka-player .ulka-menu-row[data-icon="keyboard"] { --ulka-row-icon: var(--ulka-i-keyboard); }
+.ulka-player .ulka-menu-row[data-icon="help"] { --ulka-row-icon: var(--ulka-i-help); }
+.ulka-player .ulka-menu-check::after { content: ""; flex: none; width: 16px; height: 16px; margin-left: auto; background: var(--shaka-font-color-secondary); -webkit-mask: var(--ulka-i-check) center / contain no-repeat; mask: var(--ulka-i-check) center / contain no-repeat; opacity: 0; transition: opacity 120ms ease; }
+.ulka-player .ulka-menu-check[aria-checked="true"]::after { opacity: 1; }
+.ulka-player .ulka-menu-sep { height: 1px; margin: 2px calc(-1 * var(--ulka-menu-pad)); background: var(--ulka-line); }
+.ulka-player .ulka-menu-row {
+  position: relative;
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 36px;
+  padding: 8px;
+  box-sizing: border-box;
+  border: 0;
+  border-radius: 8px;
+  line-height: 20px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 150ms var(--ulka-ease);
+}
+@media (hover: hover) { .ulka-player .ulka-menu-row:hover { background: rgb(255 255 255 / 16%); } }
+.ulka-player.ulka-keys .ulka-menu-row:focus-visible { background: rgb(255 255 255 / 16%); }
+.ulka-player .ulka-menu-row:focus { outline: 0; }
+.ulka-player .ulka-menu-next::after,
+.ulka-player .ulka-menu-back::before { content: ""; flex: none; width: 18px; height: 18px; background: currentColor; }
+.ulka-player .ulka-menu-next::after { margin-left: auto; -webkit-mask: var(--ulka-i-chevronRight) center / contain no-repeat; mask: var(--ulka-i-chevronRight) center / contain no-repeat; }
+.ulka-player .ulka-menu-back { font-weight: 600; letter-spacing: -.02em; }
+.ulka-player .ulka-menu-back::before { -webkit-mask: var(--ulka-i-chevronLeft) center / contain no-repeat; mask: var(--ulka-i-chevronLeft) center / contain no-repeat; }
+
+/* About: label left, value right, figures in tabular digits. */
+.ulka-player .ulka-facts { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 16px; margin: 0; padding: 4px 8px 6px; }
+.ulka-player .ulka-facts dt { color: var(--shaka-font-color-secondary); }
+.ulka-player .ulka-facts dd { margin: 0; overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+/* Keyboard shortcuts: what it does left (with its step, muted), its keys right as chips. */
+.ulka-player .ulka-keys-list { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 12px; max-height: min(260px, 60vh); margin: 0; padding: 4px 8px 6px; overflow: hidden auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-gutter: stable; }
+.ulka-player .ulka-key-label { min-width: 0; overflow-wrap: anywhere; }
+.ulka-player .ulka-key-note { margin-left: 6px; color: var(--shaka-font-color-secondary); font-variant-numeric: tabular-nums; }
+.ulka-player .ulka-key-keys { display: flex; justify-content: flex-end; gap: 4px; margin: 0; }
+/* Keycaps for shortcuts (here and in tooltips): a translucent key on the glass, lighter at the top, with a fine rim,
+   a top highlight, a darker bottom edge for depth and a soft shadow. [data-press] plays one press (skin/keycap.ts). */
+.ulka-player :is(.ulka-kbd, .ulka-tip-key) {
+  position: relative;
+  min-width: 20px;
+  margin-bottom: 2px;
+  padding: 1px 6px;
+  box-sizing: border-box;
+  border: 1px solid var(--ulka-key-rim);
+  border-radius: 5px;
+  background: linear-gradient(to bottom, var(--ulka-key-top), var(--ulka-key));
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 20%), 0 2px 0 0 var(--ulka-key-edge), 0 3px 6px -2px rgb(0 0 0 / 35%);
+  color: var(--ulka-fg);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.5;
+  text-align: center;
+  text-shadow: var(--ulka-text-shadow);
+}
+.ulka-player :is(.ulka-kbd, .ulka-tip-key)[data-press] { animation: ulka-keypress 420ms cubic-bezier(.3, .7, .3, 1) var(--ulka-press-delay, 0ms) both; }
+@keyframes ulka-keypress {
+  0% { translate: 0 0; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 20%), 0 2px 0 0 var(--ulka-key-edge), 0 3px 6px -2px rgb(0 0 0 / 35%); }
+  30% { translate: 0 2px; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 12%), 0 0 0 0 var(--ulka-key-edge), 0 1px 2px -1px rgb(0 0 0 / 35%); }
+  65% { translate: 0 -0.5px; }
+  100% { translate: 0 0; box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 20%), 0 2px 0 0 var(--ulka-key-edge), 0 3px 6px -2px rgb(0 0 0 / 35%); }
+}
+@media (prefers-reduced-motion: reduce) { .ulka-player :is(.ulka-kbd, .ulka-tip-key)[data-press] { animation: none; } }

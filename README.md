@@ -68,7 +68,8 @@ curl http://localhost:5173/v1/assets -H "Authorization: Bearer $KEY"
 
 The guides and the API reference are in the console under **Docs**.
 
-Each workspace has limits (largest upload, encoding minutes a month). To change them for a workspace:
+Each workspace has limits (largest upload, encoding minutes a month). `go run ./cmd/ulka-vms limits` lists the
+workspaces; to change one's limits:
 
 ```sh
 go run ./cmd/ulka-vms limits <workspace id> encode_minutes_monthly=6000 max_upload_bytes=21474836480
@@ -90,17 +91,9 @@ fit together and how to build on Ulka VMS.
 
 ## Deployment
 
-One server can run everything; workers can be added on more machines for encoding.
-
-1. Build: `go build -o ulka-vms ./cmd/ulka-vms` and `cd web && npm ci && npm run build` (files in `web/dist`).
-2. Settings: `.env` as above, with real https addresses for `PUBLIC_URL`, `PLAYER_URL`, `ORIGIN_URL` and `DOCS_URL`,
-   and a real mail provider (`MAIL_PROVIDER=smtp` or `resend`). Start-up refuses development values on a public
-   address.
-3. Run `docker compose up -d`, `ulka-vms migrate`, then `ulka-vms api` and `ulka-vms worker` as services.
-4. Put [Caddy](https://caddyserver.com) in front with [`deploy/Caddyfile`](deploy/Caddyfile): it serves the console,
-   the player and the origin over HTTPS.
-
-Storage can be any S3-compatible store; set `S3_*` and leave `COMPOSE_PROFILES` empty to skip SeaweedFS.
+One server runs everything; more machines can be added for encoding. [SELF-HOSTING.md](SELF-HOSTING.md) walks through
+it on Ubuntu, step by step: DNS, installing, settings, services, HTTPS with Caddy, backups and updates. Service files
+are in `deploy/systemd` and the Caddy configuration in `deploy/Caddyfile`.
 
 ## Contributing
 

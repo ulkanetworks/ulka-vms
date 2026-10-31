@@ -1,0 +1,113 @@
+# Every container's own log is capped: 3 files of 10 MB, then the oldest is dropped.
+x-logging: &logging
+  driver: json-file
+  options: { max-size: "10m", max-file: "3" }
+
+# Postgres, SeaweedFS (S3 API on :8334), the nginx origin (:8092), ClickHouse (HTTP on :8124) and the OpenTelemetry
+# Collector (:4318). Every port binds to 127.0.0.1: on a server a reverse proxy is the only way in (Docker ports skip
+# the firewall), and the S3 port must stay private since its anonymous read is what nginx relies on.
+# SeaweedFS runs only with COMPOSE_PROFILES=seaweedfs; with any other S3 store, leave it out.
+services:
+  postgres:
+    logging: *logging
+    restart: unless-stopped
+    image: postgres:17
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+    ports: ["127.0.0.1:5434:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    configs:
+      - source: app_role
+        target: /docker-entrypoint-initdb.d/app_role.sql
+
+  seaweedfs:
+    profiles: [seaweedfs]
+    logging: *logging
+    restart: unless-stopped
+    image: chrislusf/seaweedfs
+    # Small volumes: SeaweedFS only creates a volume when the disk has room for a whole one (30 GB by default), so on
+    # a small disk every write failed with "failed to find writable volumes".
+    command: server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json -master.volumeSizeLimitMB=1024 -volume.max=0
+    ports: ["127.0.0.1:8334:8333"]
+    volumes: [seaweed:/data]
+    configs:
+      - source: s3_identities
+        target: /etc/seaweedfs/s3.json
+
+  origin:
+    logging: *logging
+    restart: unless-stopped
+    image: nginx:stable
+    # Vector deletes the dated access logs once shipped, so nginx must own the folder (Docker creates volumes as root).
+    entrypoint: ["sh", "-c", "chown nginx /var/log/ulka && exec /docker-entrypoint.sh nginx -g 'daemon off;'"]
+    environment:
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL:?set in .env}
+    ports: ["127.0.0.1:8092:80"]
+    volumes:
+      - ./deploy/origin.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - origin_logs:/var/log/ulka
+    depends_on:
+      seaweedfs: { condition: service_started, required: false }
+
+  # Ships the origin's access logs to ClickHouse, where video delivery is metered.
+  vector:
+    logging: *logging
+    restart: unless-stopped
+    image: timberio/vector:0.58.0-alpine
+    secrets: [clickhouse_password]
+    volumes:
+      - ./deploy/vector/vector.yaml:/etc/vector/vector.yaml:ro
+      - origin_logs:/logs:ro
+      - vector_data:/var/lib/vector
+    # Not ClickHouse: it may be on another machine, and Vector keeps the lines on disk until it answers.
+    depends_on: [origin]
+
+  clickhouse:
+    logging: *logging
+    restart: unless-stopped
+    image: clickhouse/clickhouse-server:25.8-alpine
+    environment:
+      CLICKHOUSE_USER: ulka
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set in .env}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ports: ["127.0.0.1:8124:8123"]
+    volumes:
+      - clickhouse:/var/lib/clickhouse
+      - ./deploy/clickhouse:/docker-entrypoint-initdb.d:ro
+      - ./deploy/clickhouse-config/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
+    ulimits:
+      nofile: { soft: 262144, hard: 262144 }
+
+  # OpenTelemetry: ulka-vms sends OTLP here (OTEL_EXPORTER_OTLP_ENDPOINT); it writes to ClickHouse.
+  otel-collector:
+    logging: *logging
+    restart: unless-stopped
+    image: otel/opentelemetry-collector-contrib:0.161.0
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?set in .env}
+    ports: ["127.0.0.1:4318:4318"]
+    volumes:
+      - ./deploy/otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    depends_on: [clickhouse]
+
+configs:
+  app_role:
+    content: CREATE ROLE ulka_app LOGIN PASSWORD '${ULKA_APP_PASSWORD:?set in .env}';
+  s3_identities:
+    content: |
+      {"identities": [{"name": "ulka", "actions": ["Admin", "Read", "Write", "List", "Tagging"],
+        "credentials": [{"accessKey": "${S3_ACCESS_KEY_ID:?set in .env}", "secretKey": "${S3_SECRET_ACCESS_KEY:?set in .env}"}]},
+        {"name": "anonymous", "actions": ["Read:${S3_BUCKET}", "Read:${S3_BUCKET}-test"]}]}
+
+secrets:
+  clickhouse_password:
+    environment: CLICKHOUSE_PASSWORD
+
+volumes:
+  origin_logs:
+  vector_data:
+  pgdata:
+  seaweed:
+  clickhouse:

@@ -1,0 +1,19 @@
+[Unit]
+Description=Ulka VMS api
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=ulka-vms
+WorkingDirectory=/opt/ulka-vms
+# The settings are read by sh, not systemd, so values like ${POSTGRES_PASSWORD} inside others expand.
+ExecStart=/bin/sh -c 'set -a; . /etc/ulka-vms/ulka-vms.env; set +a; exec /opt/ulka-vms/bin/ulka-vms api'
+Restart=always
+RestartSec=5
+# Running jobs get time to finish on a stop; encoding pieces left over are picked up again by another worker.
+TimeoutStopSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

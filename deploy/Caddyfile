@@ -1,0 +1,71 @@
+# The front door on a server: HTTPS for three host names, each pointing at this machine first. Caddy reads them from
+# its environment: CONSOLE_HOST (PUBLIC_URL's host, also serving the docs), PLAYER_HOST (PLAYER_URL's), ORIGIN_HOST
+# (ORIGIN_URL's), API_ADDR (where `ulka-vms api` listens), ORIGIN_UPSTREAM (the nginx origin, 127.0.0.1:8092 with
+# compose.yaml) and WEB_ROOT (the console's built files, web/dist). Caddy gets the certificates by itself.
+
+{
+	servers {
+		# Set to your proxy's ranges when behind one (Cloudflare, a load balancer); keep TRUSTED_PROXIES the same.
+		trusted_proxies static private_ranges
+	}
+}
+
+# The API: during a restart Caddy keeps trying to connect for 20 s, so requests wait instead of failing with 502.
+(api) {
+	reverse_proxy {$API_ADDR} {
+		lb_try_duration 20s
+	}
+}
+
+# The console's files. Build files have hashed names, so they are kept forever, and a missing one is a real 404:
+# answered with the page, a browser would run HTML as a script. The page itself is checked on every load.
+(console_files) {
+	root * {$WEB_ROOT}
+	handle /assets/* {
+		@found file
+		header @found Cache-Control "public, max-age=31536000, immutable"
+		@missing not file
+		header @missing Cache-Control "no-store"
+		file_server
+	}
+	handle {
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# The console, the docs and the API.
+{$CONSOLE_HOST} {
+	encode zstd gzip
+	@api path /v1/*
+	handle @api {
+		import api
+	}
+	handle {
+		import console_files
+	}
+}
+
+# The player: library/video/<file> is the API's (playlists, keys, captions, images); library/video itself is the watch
+# page, from the console's files. A signed video's ?token= rides along untouched.
+{$PLAYER_HOST} {
+	encode zstd gzip
+	@play path_regexp ^/[0-9a-f-]{36}/[0-9a-f-]{36}/[^/]
+	handle @play {
+		rewrite * /play{uri}
+		import api
+	}
+	@pageapi path /v1/meta /v1/client-errors
+	handle @pageapi {
+		import api
+	}
+	handle {
+		import console_files
+	}
+}
+
+# Video segments from the nginx origin; browsers and CDNs keep them for a year.
+{$ORIGIN_HOST} {
+	reverse_proxy {$ORIGIN_UPSTREAM}
+}

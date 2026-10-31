@@ -1,0 +1,44 @@
+version: "2"
+# Each module owns its tables and queries; its generated code is <module>/db, used by that module only
+# (core's by anyone: it is the shared kernel). app/ownership_test.go enforces it.
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: core/queries
+    gen:
+      go:
+        package: db
+        out: core/db
+        sql_package: pgx/v5
+        emit_json_tags: true
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: video/queries
+    gen:
+      go:
+        package: db
+        out: video/db
+        sql_package: pgx/v5
+        emit_json_tags: true
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: transcoder/queries
+    gen:
+      go:
+        package: db
+        out: transcoder/db
+        sql_package: pgx/v5
+        emit_json_tags: true
+        omit_unused_structs: true
+  - engine: postgresql
+    schema: migrations
+    queries: webhooks/queries
+    gen:
+      go:
+        package: db
+        out: webhooks/db
+        sql_package: pgx/v5
+        emit_json_tags: true
+        omit_unused_structs: true
