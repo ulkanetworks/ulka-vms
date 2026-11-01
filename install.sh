@@ -5,9 +5,12 @@
 #
 # It asks for your domain, email and storage settings (or reads DOMAIN, SMTP_URL, MAIL_FROM and S3_ENDPOINT, S3_REGION,
 # S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY from the environment), makes every other secret, and starts
-# everything. Videos are kept in your S3-compatible storage, not on this server. Run it again to upgrade.
-# ULKA_VMS_ARCHIVE=/path/to/ulka-vms-linux-<arch>.tar.gz installs from a file instead of downloading.
-set -euo pipefail
+# everything. Videos are kept in your S3-compatible storage, not on this server.
+#
+# Run it again at any time: it finishes an install that stopped part way, or upgrades a finished one. Your settings
+# and videos stay. START_OVER=erase deletes this server's settings and database first and installs afresh (the videos
+# in your bucket are left alone). ULKA_VMS_ARCHIVE=/path/to/ulka-vms-linux-<arch>.tar.gz installs from a file.
+set -Eeuo pipefail
 
 # Everything runs inside main, called on the last line: bash reads a piped script as it goes, and a command that reads
 # its input would otherwise swallow the rest of the script.
@@ -17,16 +20,32 @@ REPO="ulkanetworks/ulka-vms"
 APP_DIR="/opt/ulka-vms"
 CONFIG_DIR="/etc/ulka-vms"
 SETTINGS="$CONFIG_DIR/ulka-vms.env"
+WEB_SETTINGS="$CONFIG_DIR/web.env"
+INSTALLED="$CONFIG_DIR/installed" # written last: without it, the settings belong to an install that didn't finish
+PROJECT="ulka-vms"                # the Docker Compose project, which names the containers and data volumes
 PACKAGER_VERSION="v3.9.3"
+UNITS="ulka-vms-api ulka-vms-worker ulka-vms-origin"
+PORTS="80 443 8096 8092 5434 8124 4318" # HTTPS, API, origin, Postgres, ClickHouse, telemetry
+MIN_DISK_GB=10
+MIN_MEMORY_GB=4
 
 # --- Output -------------------------------------------------------------------------------------------------------
 
 bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true); reset=$(tput sgr0 2>/dev/null || true)
 step() { printf '\n%s==> %s%s\n' "$bold" "$1" "$reset"; }
 note() { printf '    %s\n' "$1"; }
-fail() { printf '\n%sCould not finish:%s %s\n' "$bold" "$reset" "$1" >&2; exit 1; }
+# Failures go to fd 3, the terminal's stderr as it was at start: a trap runs inside the redirections of the step it
+# interrupts, and a plain >&2 would land in that step's log file.
+exec 3>&2
+fail() { printf '\n%sCould not finish:%s %s\n' "$bold" "$reset" "$1" >&3; again; exit 1; }
+again() { $STARTED && printf '    Fix that, then run the installer again: it picks up where it stopped.\n' >&3; return 0; }
+STARTED=false
 # Everything a step prints goes to the log; on failure, its last lines say why.
 LOG=$(mktemp /tmp/ulka-vms-install.XXXXXX.log)
+work=""
+trap 'rm -rf "$work"' EXIT
+trap 'fail "something went wrong (line $LINENO). The full log is $LOG"' ERR
+trap 'printf "\n%sStopped.%s Run the installer again to pick up where it left off.\n" "$bold" "$reset" >&3; exit 130' INT TERM
 quiet() {
   local out; out=$(mktemp)
   if "$@" >"$out" 2>&1; then cat "$out" >>"$LOG"; rm -f "$out"; return; fi
@@ -38,11 +57,10 @@ retry() {
   local n
   for n in 1 2 3; do
     if "$@" >>"$LOG" 2>&1; then return; fi
-    [ "$n" -lt 3 ] && note "The download was interrupted; trying again ($n of 2)."
+    if [ "$n" -lt 3 ]; then note "The download was interrupted; trying again ($n of 2)."; sleep 3; fi
   done
   quiet "$@"
 }
-trap 'fail "something went wrong. The full log is $LOG"' ERR
 
 # Questions read from the terminal, so they work when this script itself comes through a pipe.
 ask() { # ask VAR "question" [default]
@@ -55,29 +73,85 @@ ask() { # ask VAR "question" [default]
   fi
   if [ -n "$default" ]; then question="$question [$default]"; fi
   read -r ${SILENT:+-s} -p "    $question: " answer </dev/tty
-  [ -n "${SILENT:-}" ] && echo
+  if [ -n "${SILENT:-}" ]; then echo; fi
   printf -v "$var" '%s' "${answer:-$default}"
 }
 ask_secret() { SILENT=1 ask "$@"; } # typed without showing
 
-# --- Checks -------------------------------------------------------------------------------------------------------
+# What this install left on the server: its containers and data volumes.
+our_containers() { command -v docker >/dev/null && docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true; }
+our_volumes() { command -v docker >/dev/null && docker volume ls -q --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true; }
+erase_everything() {
+  for unit in $UNITS; do systemctl stop "$unit" 2>/dev/null || true; done
+  our_containers | xargs -r docker rm -f >>"$LOG" 2>&1
+  our_volumes | xargs -r docker volume rm >>"$LOG" 2>&1
+  rm -rf "$CONFIG_DIR"
+}
+
+# port_owner names the program listening on a TCP port, or nothing.
+port_owner() { { ss -Hltnp "sport = :$1" 2>/dev/null || true; } | sed -n 's/.*users:(("\([^"]*\)".*/\1/p' | head -n 1; }
+
+# --- The server ---------------------------------------------------------------------------------------------------
 
 [ "$(id -u)" -eq 0 ] || fail "run it as root: curl -fsSL … | sudo bash"
+[ -d /run/systemd/system ] || fail "this server doesn't run systemd, which Ulka VMS's services need. A container isn't enough: use a virtual or real server."
 . /etc/os-release 2>/dev/null || true
-case "${ID:-}" in ubuntu|debian) ;; *) fail "this installer supports Ubuntu and Debian. Elsewhere, follow SELF-HOSTING.md." ;; esac
+case "${ID:-}" in
+  ubuntu) dpkg --compare-versions "${VERSION_ID:-0}" ge 22.04 || fail "Ubuntu ${VERSION_ID:-} is too old: use 22.04 or newer." ;;
+  debian) dpkg --compare-versions "${VERSION_ID:-0}" ge 12 || fail "Debian ${VERSION_ID:-} is too old: use 12 or newer." ;;
+  *) fail "this installer supports Ubuntu and Debian. Elsewhere, follow SELF-HOSTING.md." ;;
+esac
 case "$(uname -m)" in
   x86_64) ARCH=amd64 ;;
   aarch64|arm64) ARCH=arm64 ;;
   *) fail "the processor of this server ($(uname -m)) is not supported: x86-64 and ARM64 are." ;;
 esac
-UPGRADE=false; [ -f "$SETTINGS" ] && UPGRADE=true
+exec 9>/var/lock/ulka-vms-install.lock
+flock -n 9 || fail "the installer is already running on this server. Wait for it to finish."
+
+free_gb=$(( $(df -Pk / | awk 'NR==2 {print $4}') / 1024 / 1024 ))
+[ "$free_gb" -ge "$MIN_DISK_GB" ] || fail "only ${free_gb} GB of disk is free; Ulka VMS needs at least $MIN_DISK_GB GB for its database and work in progress."
+memory_gb=$(awk '/^MemTotal:/ {printf "%d", $2 / 1024 / 1024 + 0.5}' /proc/meminfo)
+
+# Fresh: nothing here yet. Resume: settings from a run that stopped part way. Upgrade: a finished install.
+if [ "${START_OVER:-}" = "erase" ]; then
+  printf '%sUlka VMS%s: starting over, as START_OVER=erase asks.\n' "$bold" "$reset"
+  erase_everything
+  unset START_OVER
+fi
+STATE=fresh
+if [ -f "$SETTINGS" ]; then STATE=resume; [ -f "$INSTALLED" ] && STATE=upgrade; fi
 
 printf '%sUlka VMS%s: video hosting on your own server.\n' "$bold" "$reset"
-if $UPGRADE; then note "Found an existing install: upgrading it. Your settings and videos stay."; fi
+case $STATE in
+  upgrade) note "Found an existing install: upgrading it. Your settings and videos stay." ;;
+  resume) note "Found an install that didn't finish: picking it up with the settings it saved." ;;
+esac
+if [ "$STATE" != fresh ] && [ -n "${DOMAIN:-}${S3_BUCKET:-}${SMTP_URL:-}" ]; then
+  note "Settings in the environment are ignored: this server's are in $SETTINGS. To change them, edit that file."
+fi
+if [ "$memory_gb" -lt "$MIN_MEMORY_GB" ]; then
+  note "This server has ${memory_gb} GB of memory; $MIN_MEMORY_GB GB or more is recommended, or encoding will be slow."
+fi
+
+# Another program on a port Ulka VMS needs would only show up later, as a service that won't start.
+busy=()
+for port in $PORTS; do
+  owner=$(port_owner "$port")
+  case "$owner" in
+    ""|caddy|ulka-vms) ;;
+    docker-proxy) [ -n "$(our_containers)" ] || busy+=("$port (a Docker container)") ;;
+    *) busy+=("$port ($owner)") ;;
+  esac
+done
+if [ ${#busy[@]} -gt 0 ]; then
+  fail "these ports are in use by other programs: ${busy[*]}. Stop or move them (for a web server: sudo systemctl disable --now <name>), then run the installer again."
+fi
+STARTED=true
 
 # --- Questions (first install only) -------------------------------------------------------------------------------
 
-if ! $UPGRADE; then
+if [ "$STATE" = fresh ]; then
   step "A few questions"
   ask DOMAIN "Your domain (videos., player. and origin. will be made under it)"
   DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%/}
@@ -95,13 +169,15 @@ if ! $UPGRADE; then
   [[ "$S3_ENDPOINT" =~ ^https?://[^/]+$ ]] || fail "the storage address must be like https://storage.example.com, with nothing after the name."
   ask S3_REGION "Region (R2 takes auto)" "us-east-1"
   ask S3_BUCKET "Bucket name"
+  [[ "$S3_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || fail "\"$S3_BUCKET\" isn't a bucket name: 3 to 63 lowercase letters, digits, dots and dashes."
   ask S3_ACCESS_KEY_ID "Access key ID"
   ask_secret S3_SECRET_ACCESS_KEY "Secret access key"
+  [ -n "$S3_SECRET_ACCESS_KEY" ] || fail "the secret access key is empty."
 fi
 
 # --- DNS ----------------------------------------------------------------------------------------------------------
 
-if ! $UPGRADE; then
+if [ "$STATE" = fresh ]; then
   step "Checking your domain points here"
   public_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
   preset=${CONTINUE:-} # CONTINUE=skip in the environment goes on without the check
@@ -124,57 +200,99 @@ fi
 
 step "Installing what it runs on"
 export DEBIAN_FRONTEND=noninteractive
-quiet apt-get update
-quiet apt-get install -y ca-certificates curl gnupg ffmpeg webp debian-keyring debian-archive-keyring apt-transport-https
-if ! command -v docker >/dev/null; then quiet sh -c 'curl -fsSL https://get.docker.com | sh'; fi
+# A fresh server often runs its own updates first: wait for them rather than fail on the package lock.
+apt_get() { apt-get -o DPkg::Lock::Timeout=900 "$@"; }
+note "If the server is installing its own updates, this waits for them."
+# Finishes a package install an earlier run (or anything else) left half done; dpkg itself doesn't wait for the lock.
+for _ in $(seq 1 180); do
+  if out=$(dpkg --configure -a 2>&1); then break; fi
+  grep -q 'lock' <<<"$out" || { echo "$out" >&2; fail "the server's package manager is in a broken state (above)."; }
+  sleep 5
+done
+echo "${out:-}" >>"$LOG"
+retry apt_get update
+quiet apt_get install -y ca-certificates curl gnupg ffmpeg webp iproute2 debian-keyring debian-archive-keyring apt-transport-https
+timedatectl set-ntp true >>"$LOG" 2>&1 || true # storage refuses requests from a clock that is minutes off
+if ! command -v docker >/dev/null || ! docker compose version >/dev/null 2>&1; then
+  retry sh -c 'curl -fsSL https://get.docker.com | sh'
+fi
+quiet systemctl enable --now docker
 if ! command -v packager >/dev/null || ! packager --version 2>/dev/null | grep -q "$PACKAGER_VERSION"; then
-  quiet curl -fsSL -o /usr/local/bin/packager \
+  retry curl -fsSL -o /usr/local/bin/packager.download \
     "https://github.com/shaka-project/shaka-packager/releases/download/$PACKAGER_VERSION/packager-linux-$([ "$ARCH" = amd64 ] && echo x64 || echo arm64)"
-  chmod 0755 /usr/local/bin/packager
+  chmod 0755 /usr/local/bin/packager.download && mv /usr/local/bin/packager.download /usr/local/bin/packager
 fi
 if ! command -v caddy >/dev/null; then
-  curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/gpg.key | gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-  curl -1sLf https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt > /etc/apt/sources.list.d/caddy-stable.list
-  quiet apt-get update
-  quiet apt-get install -y caddy
+  retry curl -fsSL -o /tmp/caddy.gpg https://dl.cloudsmith.io/public/caddy/stable/gpg.key
+  gpg --batch --yes --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg /tmp/caddy.gpg && rm -f /tmp/caddy.gpg
+  retry curl -fsSL -o /etc/apt/sources.list.d/caddy-stable.list https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt
+  retry apt_get update
+  quiet apt_get install -y caddy
 fi
 note "Done."
+
+# --- Data from an earlier attempt ---------------------------------------------------------------------------------
+
+# Its database was made with passwords that are gone with its settings, so it can't be reused.
+if [ "$STATE" = fresh ] && [ -n "$(our_volumes)" ]; then
+  step "Found data from an earlier install"
+  note "This server holds a database from an earlier install whose settings are gone, so it can't be used again."
+  note "To keep it, put the settings file back at $SETTINGS and run the installer again."
+  note "Starting over deletes that database here. Videos in your bucket are not touched."
+  ask START_OVER "Type erase to delete it and start fresh, or press Enter to stop" "stop"
+  [ "$START_OVER" = "erase" ] || { STARTED=false; fail "stopped, nothing was changed. Run it again with START_OVER=erase to start fresh."; }
+  erase_everything
+  note "Deleted."
+fi
 
 # --- Ulka VMS -----------------------------------------------------------------------------------------------------
 
 step "Getting Ulka VMS"
 work=$(mktemp -d)
 if [ -n "${ULKA_VMS_ARCHIVE:-}" ]; then
+  [ -f "$ULKA_VMS_ARCHIVE" ] || fail "ULKA_VMS_ARCHIVE names $ULKA_VMS_ARCHIVE, which doesn't exist."
   cp "$ULKA_VMS_ARCHIVE" "$work/release.tar.gz"
 else
   retry curl -fsSL -o "$work/release.tar.gz" "https://github.com/$REPO/releases/latest/download/ulka-vms-linux-$ARCH.tar.gz"
 fi
-mkdir -p "$work/release" && tar -xzf "$work/release.tar.gz" -C "$work/release"
+mkdir -p "$work/release"
+tar -xzf "$work/release.tar.gz" -C "$work/release" 2>>"$LOG" && [ -x "$work/release/bin/ulka-vms" ] ||
+  fail "the downloaded release is incomplete, probably cut off on the way."
+note "Version $(cat "$work/release/VERSION")."
+
+# --- Storage ------------------------------------------------------------------------------------------------------
+
+# Checked with the new release before anything on the server changes, so a bad bucket stops an upgrade harmlessly.
+step "Checking your storage"
+if [ "$STATE" != fresh ] && grep -q '^COMPOSE_PROFILES=seaweedfs' "$SETTINGS"; then
+  fail "this install keeps videos in storage on this server, which this release no longer runs. Copy the bucket to S3-compatible storage, set S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in $SETTINGS to it, delete the S3_PUBLIC_URL and COMPOSE_PROFILES lines, and run the installer again."
+fi
+if [ "$STATE" = fresh ]; then
+  checked=$(S3_ENDPOINT=$S3_ENDPOINT S3_REGION=$S3_REGION S3_BUCKET=$S3_BUCKET S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID \
+    S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY "$work/release/bin/ulka-vms" check-storage 2>&1) && ok=true || ok=false
+else
+  checked=$(sh -c "set -a; . '$SETTINGS'; set +a; exec '$work/release/bin/ulka-vms' check-storage" 2>&1) && ok=true || ok=false
+fi
+echo "$checked" >>"$LOG"
+if ! $ok; then
+  echo "$checked" >&2
+  if [ "$STATE" = fresh ]; then
+    fail "the bucket couldn't be written, read and cleaned up with these details (the reason is above). Check the address, region, bucket name and key."
+  fi
+  fail "the bucket in $SETTINGS couldn't be written, read and cleaned up (the reason is above). Nothing on the server was changed; fix the S3_ settings there."
+fi
+note "The bucket works."
+
 id ulka-vms >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin ulka-vms
 mkdir -p "$APP_DIR"
 # The new release replaces the old one's files; data lives in Docker volumes and the settings in $CONFIG_DIR.
 rm -rf "${APP_DIR:?}/bin" "${APP_DIR:?}/web" "${APP_DIR:?}/deploy"
 cp -a "$work/release/." "$APP_DIR/"
 chown -R ulka-vms:ulka-vms "$APP_DIR"
-note "Version $(cat "$APP_DIR/VERSION")."
 
-# --- Storage ------------------------------------------------------------------------------------------------------
+# --- Settings -----------------------------------------------------------------------------------------------------
 
-if ! $UPGRADE; then
-  step "Checking your storage"
-  export S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY
-  if ! checked=$("$APP_DIR/bin/ulka-vms" check-storage 2>&1); then
-    echo "$checked" >>"$LOG"; echo "$checked" >&2
-    fail "the bucket couldn't be written, read and cleaned up with these details (the reason is above). Check the address, region, bucket name and key, then run the installer again."
-  fi
-  note "The bucket works."
-elif grep -q '^COMPOSE_PROFILES=seaweedfs' "$SETTINGS"; then
-  fail "this install keeps videos in storage on this server, which this release no longer runs. Copy the bucket to S3-compatible storage, set S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in $SETTINGS to it, delete the S3_PUBLIC_URL and COMPOSE_PROFILES lines, and run the installer again."
-fi
-
-# --- Settings (first install only) --------------------------------------------------------------------------------
-
-if ! $UPGRADE; then
+if [ "$STATE" = fresh ]; then
   step "Writing the settings"
   mkdir -p "$CONFIG_DIR"
   secret() { openssl rand -hex 24; }
@@ -188,13 +306,13 @@ if ! $UPGRADE; then
       -e "s|^DOCS_URL=.*|DOCS_URL=https://$CONSOLE_HOST|" \
       -e "s|^PLAYER_URL=.*|PLAYER_URL=https://$PLAYER_HOST|" \
       -e "s|^ORIGIN_URL=.*|ORIGIN_URL=https://$ORIGIN_HOST/s|" \
-      "$APP_DIR/.env.example" > "$SETTINGS"
+      "$APP_DIR/.env.example" > "$SETTINGS.new"
   # Email values may hold spaces, <> or quotes: written by the shell, quoted for the shell that reads the file.
   { echo; echo "# Email, set by the installer"; echo "MAIL_PROVIDER=smtp"; echo "SMTP_URL=$(q "$SMTP_URL")"; echo "MAIL_FROM=$(q "$MAIL_FROM")"
     echo; echo "# Storage, set by the installer"; echo "S3_ENDPOINT=$(q "$S3_ENDPOINT")"; echo "S3_REGION=$(q "$S3_REGION")"
-    echo "S3_BUCKET=$(q "$S3_BUCKET")"; echo "S3_ACCESS_KEY_ID=$(q "$S3_ACCESS_KEY_ID")"; echo "S3_SECRET_ACCESS_KEY=$(q "$S3_SECRET_ACCESS_KEY")"; } >> "$SETTINGS"
-  chown root:ulka-vms "$SETTINGS"; chmod 640 "$SETTINGS"
-  cat > "$CONFIG_DIR/web.env" <<EOF
+    echo "S3_BUCKET=$(q "$S3_BUCKET")"; echo "S3_ACCESS_KEY_ID=$(q "$S3_ACCESS_KEY_ID")"; echo "S3_SECRET_ACCESS_KEY=$(q "$S3_SECRET_ACCESS_KEY")"; } >> "$SETTINGS.new"
+  chown root:ulka-vms "$SETTINGS.new"; chmod 640 "$SETTINGS.new"
+  cat > "$WEB_SETTINGS" <<EOF
 CONSOLE_HOST=$CONSOLE_HOST
 PLAYER_HOST=$PLAYER_HOST
 ORIGIN_HOST=$ORIGIN_HOST
@@ -202,8 +320,10 @@ API_ADDR=127.0.0.1:8096
 ORIGIN_UPSTREAM=127.0.0.1:8092
 WEB_ROOT=$APP_DIR/web
 EOF
+  mv "$SETTINGS.new" "$SETTINGS" # last and in one step: a run cut off before this starts over cleanly
   note "Saved in $SETTINGS. It holds the key your videos are encrypted with (SEAL_KEY): keep a copy somewhere safe."
 else
+  [ -f "$WEB_SETTINGS" ] || fail "$WEB_SETTINGS is missing: it names the three host names. Put it back, or start over with START_OVER=erase."
   # Settings this release added get their defaults, so an upgrade starts without editing the file.
   added=$(sed -e '/^# Tests/,$d' -e '/^COMPOSE_FILE=/d' "$APP_DIR/.env.example" | grep -E '^[A-Z0-9_]+=' | while IFS= read -r line; do
     grep -q "^${line%%=*}=" "$SETTINGS" || echo "$line"
@@ -216,45 +336,64 @@ fi
 
 # --- Services -----------------------------------------------------------------------------------------------------
 
-compose() { (cd "$APP_DIR" && docker compose --env-file "$SETTINGS" "$@"); }
+compose() { (cd "$APP_DIR" && docker compose -p "$PROJECT" --env-file "$SETTINGS" "$@"); }
 run() { sh -c "set -a; . '$SETTINGS'; set +a; exec $APP_DIR/bin/ulka-vms $*"; }
+# wait_for tries a check once a second for up to n seconds.
+wait_for() { local n=$1; shift; for _ in $(seq 1 "$n"); do if "$@" >/dev/null 2>&1; then return 0; fi; sleep 1; done; return 1; }
 
 step "Starting the database"
 retry compose pull --quiet
 quiet compose up -d --remove-orphans # also stops what an earlier release ran and this one doesn't
-for _ in $(seq 1 60); do compose exec -T postgres pg_isready -U postgres -q </dev/null >/dev/null 2>&1 && break; sleep 2; done
+wait_for 120 compose exec -T postgres pg_isready -U postgres -q </dev/null ||
+  { compose logs --tail 20 postgres >&2; fail "the database didn't start; its last messages are above."; }
+wait_for 120 curl -fs http://127.0.0.1:8124/ping ||
+  { compose logs --tail 20 clickhouse >&2; fail "ClickHouse, which keeps usage, didn't start; its last messages are above."; }
 quiet run migrate
 note "Done."
 
 step "Starting the video server"
-units="ulka-vms-api ulka-vms-worker ulka-vms-origin"
-for unit in $units; do cp "$APP_DIR/deploy/systemd/$unit.service" /etc/systemd/system/; done
+for unit in $UNITS; do cp "$APP_DIR/deploy/systemd/$unit.service" /etc/systemd/system/; done
 systemctl daemon-reload
-quiet systemctl enable $units
-quiet systemctl restart $units
-for _ in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta && break; sleep 1; done
-curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta || { journalctl -u ulka-vms-api -n 20 --no-pager >&2; fail "the server didn't start; its last messages are above."; }
-for _ in $(seq 1 15); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/)" = 404 ] && break; sleep 1; done
-[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/)" = 404 ] || { journalctl -u ulka-vms-origin -n 20 --no-pager >&2; fail "the video origin didn't start; its last messages are above."; }
+# shellcheck disable=SC2086 # one word per unit
+quiet systemctl enable $UNITS
+# shellcheck disable=SC2086
+quiet systemctl restart $UNITS
+origin_up() { [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/)" = 404 ]; }
+wait_for 60 curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta ||
+  { journalctl -u ulka-vms-api -n 20 --no-pager >&2; fail "the server didn't start; its last messages are above."; }
+wait_for 30 origin_up ||
+  { journalctl -u ulka-vms-origin -n 20 --no-pager >&2; fail "the video origin didn't start; its last messages are above."; }
+sleep 3
+systemctl is-active --quiet ulka-vms-worker ||
+  { journalctl -u ulka-vms-worker -n 20 --no-pager >&2; fail "the worker, which encodes videos, didn't start; its last messages are above."; }
 note "Done."
 
 step "Turning on HTTPS"
+# A Caddyfile that isn't ours is kept beside it, so a site this server already served can be moved over.
+if [ -f /etc/caddy/Caddyfile ] && ! grep -q 'ORIGIN_UPSTREAM' /etc/caddy/Caddyfile && [ ! -f /etc/caddy/Caddyfile.before-ulka-vms ]; then
+  cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.before-ulka-vms
+  note "The server's earlier Caddy settings are kept in /etc/caddy/Caddyfile.before-ulka-vms."
+fi
 cp "$APP_DIR/deploy/Caddyfile" /etc/caddy/Caddyfile
 mkdir -p /etc/systemd/system/caddy.service.d
-printf '[Service]\nEnvironmentFile=%s/web.env\n' "$CONFIG_DIR" > /etc/systemd/system/caddy.service.d/ulka-vms.conf
+printf '[Service]\nEnvironmentFile=%s\n' "$WEB_SETTINGS" > /etc/systemd/system/caddy.service.d/ulka-vms.conf
+quiet sh -c "set -a; . '$WEB_SETTINGS'; set +a; caddy validate --adapter caddyfile --config /etc/caddy/Caddyfile"
 systemctl daemon-reload
+quiet systemctl enable caddy
 quiet systemctl restart caddy
 if command -v ufw >/dev/null && ufw status | grep -q "Status: active"; then quiet ufw allow 80; quiet ufw allow 443; fi
 note "Done. Certificates are issued in the background; the first visit may take a few seconds."
 
+cat "$APP_DIR/VERSION" > "$INSTALLED"
 console=$(sh -c ". '$SETTINGS'; echo \$PUBLIC_URL")
 printf '\n%sUlka VMS is running.%s\n' "$bold" "$reset"
-if $UPGRADE; then
+if [ "$STATE" = upgrade ]; then
   note "Open $console"
 else
   note "Open $console/signup and create your account: you'll own the first workspace."
   note "Then close sign-up to strangers: set SIGNUP=closed in $SETTINGS and run"
   note "  sudo systemctl restart ulka-vms-api"
+  note "If the page doesn't open, check your server provider's firewall lets in ports 80 and 443."
 fi
 note "Settings: $SETTINGS   Upgrade: run this installer again."
 printf '%s    Install log: %s%s\n' "$dim" "$LOG" "$reset"

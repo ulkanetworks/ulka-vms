@@ -28,6 +28,22 @@ To upgrade later, run the same command: your settings and videos stay. To instal
 set `DOMAIN`, `SMTP_URL`, `MAIL_FROM` and the five `S3_` settings (`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
 `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) in the environment first.
 
+### If it stops
+
+Fix what its message names and run the same command again: it picks up where it stopped, with the answers it saved.
+It checks before it changes anything: that the server runs Ubuntu 22.04+ or Debian 12+ with systemd, has 10 GB of disk
+free, and has no other program on the ports it needs (80, 443 and a few on 127.0.0.1); that your bucket can be
+written, read and cleaned up. On an upgrade, a bucket that stopped working stops it before the running server is
+touched. It waits for updates the server is installing on its own.
+
+To start over on the same server, deleting its settings and database (your bucket is left alone):
+
+```sh
+curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo START_OVER=erase bash
+```
+
+If you deleted the settings but the database is still there, the installer asks before deleting it.
+
 The rest of this guide does the same by hand, for those who want to see or change each step.
 
 ## By hand

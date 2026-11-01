@@ -110,6 +110,11 @@ program and console, settings the release added (with their `.env.example` defau
 earlier release ran removed, restart. Its messages speak of what it does, not the tools underneath; their output goes
 to a log it names. `SELF-HOSTING.md` has the same steps by hand.
 
+A run is safe to repeat. The settings file is written last and in one step, and /etc/ulka-vms/installed only once
+everything started: settings without it mean an install that stopped part way, which the next run finishes. Storage
+is checked with the new release before anything changes. A database whose settings are gone is never reused (its
+passwords went with them); `START_OVER=erase` deletes this server's settings and data, never the bucket.
+
 Servers keep no videos: storage is always an outside S3-compatible bucket, private, read only with the server's key.
 `compose.dev.yaml` adds a local stand-in for development and tests and is never shipped.
 
