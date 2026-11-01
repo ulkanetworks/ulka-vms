@@ -73,10 +73,14 @@ func Main(ext Extension) {
 		err = ServeOrigin(ctx, MustEnv("ORIGIN_ADDR"), newStorage(), MustURL("CLICKHOUSE_URL"), mustProxies())
 	case cmd == "check-storage":
 		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		if err = newStorage().Check(cctx); err == nil {
-			fmt.Println("Storage works: the bucket can be written, read and cleaned up.")
-		}
+		cerr := newStorage().Check(cctx)
 		cancel()
+		if cerr != nil { // the plain reason first, for people; the provider's own answer under it
+			fmt.Fprintln(os.Stderr, core.StorageProblem(cerr)+".")
+			fmt.Fprintln(os.Stderr, "details:", cerr)
+			os.Exit(1)
+		}
+		fmt.Println("Storage works: the bucket can be written, read and cleaned up.")
 	case cmd == "limits":
 		err = SetLimits(ctx, MustEnv("MIGRATE_DATABASE_URL"), core.ExtraLimitDefaults, os.Args[2:])
 	case ext.Commands[cmd] != nil:

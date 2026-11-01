@@ -31,9 +31,16 @@ MIN_MEMORY_GB=4
 
 # --- Output -------------------------------------------------------------------------------------------------------
 
-bold=$(tput bold 2>/dev/null || true); dim=$(tput dim 2>/dev/null || true); reset=$(tput sgr0 2>/dev/null || true)
-step() { printf '\n%s==> %s%s\n' "$bold" "$1" "$reset"; }
+color() { tput "$@" 2>/dev/null || true; }
+bold=$(color bold); dim=$(color dim); reset=$(color sgr0)
+cyan=$(color setaf 6); green=$(color setaf 2); yellow=$(color setaf 3)
+step() { printf '\n%s%s==>%s %s%s%s\n' "$bold" "$cyan" "$reset" "$bold" "$1" "$reset"; }
 note() { printf '    %s\n' "$1"; }
+# A question's layout: a numbered title, dimmed hints under it, the prompt, then a check or a problem.
+section() { printf '\n  %s%s[%s]%s %s%s%s\n' "$bold" "$cyan" "$1" "$reset" "$bold" "$2" "$reset"; }
+hint() { printf '      %s%s%s\n' "$dim" "$1" "$reset"; }
+ok() { printf '      %s✓%s %s\n' "$green" "$reset" "$1"; }
+problem() { printf '      %s!%s %s\n' "$yellow" "$reset" "$1"; }
 # Failures go to fd 3, the terminal's stderr as it was at start: a trap runs inside the redirections of the step it
 # interrupts, and a plain >&2 would land in that step's log file.
 exec 3>&2
@@ -72,11 +79,33 @@ ask() { # ask VAR "question" [default]
     return
   fi
   if [ -n "$default" ]; then question="$question [$default]"; fi
-  read -r ${SILENT:+-s} -p "    $question: " answer </dev/tty
+  read -r ${SILENT:+-s} -p "      ${bold}›${reset} $question: " answer </dev/tty
   if [ -n "${SILENT:-}" ]; then echo; fi
   printf -v "$var" '%s' "${answer:-$default}"
 }
 ask_secret() { SILENT=1 ask "$@"; } # typed without showing
+has_tty() { { : </dev/tty; } 2>/dev/null; }
+# ask_again clears an answer that didn't fit, so the question comes again; a scripted install has no one to ask.
+ask_again() { # ask_again VAR "what was wrong"
+  has_tty || fail "$2"
+  problem "$2 Try again."
+  printf -v "$1" '%s' ""
+}
+# ask_storage asks for the bucket's details until each has the right shape.
+ask_storage() {
+  until [[ "${S3_ENDPOINT:-}" =~ ^https?://[^/]+$ ]]; do
+    [ -z "${S3_ENDPOINT:-}" ] || ask_again S3_ENDPOINT "\"$S3_ENDPOINT\" isn't a storage address, like https://storage.example.com with nothing after the name."
+    ask S3_ENDPOINT "Storage address (S3 endpoint)"
+    S3_ENDPOINT=${S3_ENDPOINT%/}
+  done
+  ask S3_REGION "Region" "us-east-1"
+  until [[ "${S3_BUCKET:-}" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]]; do
+    [ -z "${S3_BUCKET:-}" ] || ask_again S3_BUCKET "\"$S3_BUCKET\" isn't a bucket name: 3 to 63 lowercase letters, digits, dots and dashes."
+    ask S3_BUCKET "Bucket name"
+  done
+  until [ -n "${S3_ACCESS_KEY_ID:-}" ]; do ask S3_ACCESS_KEY_ID "Access key ID"; done
+  until [ -n "${S3_SECRET_ACCESS_KEY:-}" ]; do ask_secret S3_SECRET_ACCESS_KEY "Secret access key"; done
+}
 
 # What this install left on the server: its containers and data volumes.
 our_containers() { command -v docker >/dev/null && docker ps -aq --filter "label=com.docker.compose.project=$PROJECT" 2>/dev/null || true; }
@@ -154,32 +183,48 @@ STARTED=true
 if [ "$STATE" = fresh ]; then
   step "A few questions"
   public_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
-  note "First, a domain you own, like example.com (or a part of one, like vms.example.com). Ulka VMS uses three"
-  note "addresses under it: videos. for the console, player. where viewers watch, and origin. for the video files."
-  note "In your DNS, add an A record for each one pointing at ${public_ip:-the public IP address of this server}."
-  note "You can add them while this runs: the next step checks them."
-  ask DOMAIN "Your domain"
-  # Forgiving of what people paste: a URL, one of the three names, or all three.
-  DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%%[,/ ]*}
-  case "$DOMAIN" in videos.*|player.*|origin.*) DOMAIN=${DOMAIN#*.}; note "Using $DOMAIN: the three names are made under it." ;; esac
-  [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || fail "\"$DOMAIN\" isn't a domain, like example.com."
+
+  section 1/3 "Your domain"
+  hint "A domain you own, like example.com, or a part of one, like vms.example.com."
+  hint "Ulka VMS answers on three addresses under it; each needs an A record in your DNS."
+  while true; do
+    ask DOMAIN "Domain"
+    typed=$DOMAIN
+    # Forgiving of what people paste: a URL, one of the three names, or all three.
+    DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%%[,/ ]*}
+    case "$DOMAIN" in videos.*|player.*|origin.*) DOMAIN=${DOMAIN#*.} ;; esac
+    [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] && break
+    ask_again DOMAIN "\"$typed\" isn't a domain, like example.com."
+  done
   CONSOLE_HOST="videos.$DOMAIN"; PLAYER_HOST="player.$DOMAIN"; ORIGIN_HOST="origin.$DOMAIN"
-  note "Email is how people get invitations and password resets. Give your email service's SMTP address,"
-  note "like smtp://user:password@smtp.example.com:587"
-  ask SMTP_URL "SMTP address"
-  [[ "$SMTP_URL" =~ ^smtps?:// ]] || fail "the SMTP address must start with smtp:// or smtps://."
-  ask MAIL_FROM "Send email as" "Videos <videos@$DOMAIN>"
-  note "Videos are kept in S3-compatible storage: AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO or another."
-  note "Make a private bucket there, and a key that may read, write and delete in it. Nothing needs to be public."
-  ask S3_ENDPOINT "Storage address, like https://s3.eu-central-1.amazonaws.com or https://<account>.r2.cloudflarestorage.com"
-  S3_ENDPOINT=${S3_ENDPOINT%/}
-  [[ "$S3_ENDPOINT" =~ ^https?://[^/]+$ ]] || fail "the storage address must be like https://storage.example.com, with nothing after the name."
-  ask S3_REGION "Region (R2 takes auto)" "us-east-1"
-  ask S3_BUCKET "Bucket name"
-  [[ "$S3_BUCKET" =~ ^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$ ]] || fail "\"$S3_BUCKET\" isn't a bucket name: 3 to 63 lowercase letters, digits, dots and dashes."
-  ask S3_ACCESS_KEY_ID "Access key ID"
-  ask_secret S3_SECRET_ACCESS_KEY "Secret access key"
-  [ -n "$S3_SECRET_ACCESS_KEY" ] || fail "the secret access key is empty."
+  ok "$DOMAIN"
+  hint "Point each of these at ${public_ip:-the public IP address of this server} (A records; you can add them while this runs):"
+  hint "  $CONSOLE_HOST   the console"
+  hint "  $PLAYER_HOST   where viewers watch"
+  hint "  $ORIGIN_HOST   the video files"
+
+  section 2/3 "Email (optional)"
+  hint "For invitations and password resets: your email service's SMTP address,"
+  hint "like smtp://user:password@smtp.example.com:587. Press Enter to skip; until it's set, emails"
+  hint "are only written to the server's log, and you can add it later in $SETTINGS."
+  while true; do
+    ask SMTP_URL "SMTP address" "skip"
+    [ "$SMTP_URL" = skip ] || [[ "$SMTP_URL" =~ ^smtps?://[^/]+ ]] && break
+    ask_again SMTP_URL "An SMTP address starts with smtp:// or smtps://."
+  done
+  if [ "$SMTP_URL" = skip ]; then
+    ok "Skipped: emails go to the log for now."
+  else
+    ask MAIL_FROM "Send email as" "Videos <videos@$DOMAIN>"
+    ok "Email is sent as $MAIL_FROM."
+  fi
+
+  section 3/3 "Storage for your videos"
+  hint "Any S3-compatible storage: AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO or another."
+  hint "Make a private bucket there and a key that may read, write and delete in it."
+  hint "Nothing needs to be public. On R2 the address is https://<account id>.r2.cloudflarestorage.com, region auto."
+  ask_storage
+  ok "Bucket $S3_BUCKET at $S3_ENDPOINT (checked once the program is downloaded)."
 fi
 
 # --- DNS ----------------------------------------------------------------------------------------------------------
@@ -282,20 +327,31 @@ if [ "$STATE" != fresh ] && grep -q '^COMPOSE_PROFILES=seaweedfs' "$SETTINGS"; t
   fail "this install keeps videos in storage on this server, which this release no longer runs. Copy the bucket to S3-compatible storage, set S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in $SETTINGS to it, delete the S3_PUBLIC_URL and COMPOSE_PROFILES lines, and run the installer again."
 fi
 if [ "$STATE" = fresh ]; then
-  checked=$(S3_ENDPOINT=$S3_ENDPOINT S3_REGION=$S3_REGION S3_BUCKET=$S3_BUCKET S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID \
-    S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY "$work/release/bin/ulka-vms" check-storage 2>&1) && ok=true || ok=false
+  # On a first install, details that don't work are asked again here rather than ending the install.
+  while true; do
+    checked=$(S3_ENDPOINT=$S3_ENDPOINT S3_REGION=$S3_REGION S3_BUCKET=$S3_BUCKET S3_ACCESS_KEY_ID=$S3_ACCESS_KEY_ID \
+      S3_SECRET_ACCESS_KEY=$S3_SECRET_ACCESS_KEY "$work/release/bin/ulka-vms" check-storage 2>&1) && break
+    echo "$checked" >>"$LOG"
+    reason=$(head -n 1 <<<"$checked")
+    has_tty || fail "the bucket can't be used with these details: $reason"
+    problem "The bucket can't be used with these details: $reason"
+    hint "Enter them again; press Enter to keep an answer. (The storage's own reply is in $LOG.)"
+    for pair in "S3_ENDPOINT:Storage address (S3 endpoint)" "S3_REGION:Region" "S3_BUCKET:Bucket name" "S3_ACCESS_KEY_ID:Access key ID"; do
+      var=${pair%%:*}; old=${!var}; printf -v "$var" '%s' ""; ask "$var" "${pair#*:}" "$old"
+    done
+    S3_ENDPOINT=${S3_ENDPOINT%/}
+    old=$S3_SECRET_ACCESS_KEY; S3_SECRET_ACCESS_KEY=""; ask_secret S3_SECRET_ACCESS_KEY "Secret access key (Enter keeps it)"
+    S3_SECRET_ACCESS_KEY=${S3_SECRET_ACCESS_KEY:-$old}
+    ask_storage # the shapes again, for whatever was changed
+  done
 else
-  checked=$(sh -c "set -a; . '$SETTINGS'; set +a; exec '$work/release/bin/ulka-vms' check-storage" 2>&1) && ok=true || ok=false
+  checked=$(sh -c "set -a; . '$SETTINGS'; set +a; exec '$work/release/bin/ulka-vms' check-storage" 2>&1) || {
+    echo "$checked" >>"$LOG"
+    fail "the bucket in $SETTINGS can't be used: $(head -n 1 <<<"$checked") Nothing on the server was changed; fix the S3_ settings there. (The storage's own reply is in $LOG.)"
+  }
 fi
 echo "$checked" >>"$LOG"
-if ! $ok; then
-  echo "$checked" >&2
-  if [ "$STATE" = fresh ]; then
-    fail "the bucket couldn't be written, read and cleaned up with these details (the reason is above). Check the address, region, bucket name and key."
-  fi
-  fail "the bucket in $SETTINGS couldn't be written, read and cleaned up (the reason is above). Nothing on the server was changed; fix the S3_ settings there."
-fi
-note "The bucket works."
+ok "The bucket works."
 
 id ulka-vms >/dev/null 2>&1 || useradd --system --home "$APP_DIR" --shell /usr/sbin/nologin ulka-vms
 mkdir -p "$APP_DIR"
@@ -322,7 +378,13 @@ if [ "$STATE" = fresh ]; then
       -e "s|^ORIGIN_URL=.*|ORIGIN_URL=https://$ORIGIN_HOST/s|" \
       "$APP_DIR/.env.example" > "$SETTINGS.new"
   # Email values may hold spaces, <> or quotes: written by the shell, quoted for the shell that reads the file.
-  { echo; echo "# Email, set by the installer"; echo "MAIL_PROVIDER=smtp"; echo "SMTP_URL=$(q "$SMTP_URL")"; echo "MAIL_FROM=$(q "$MAIL_FROM")"
+  { echo; echo "# Email, set by the installer. Without an SMTP address emails are only logged: to send them, set"
+    echo "# MAIL_PROVIDER=smtp and SMTP_URL (and MAIL_FROM), then: sudo systemctl restart ulka-vms-api ulka-vms-worker"
+    if [ "$SMTP_URL" = skip ]; then
+      echo "MAIL_PROVIDER=log"; echo "SMTP_URL="; echo "MAIL_FROM=$(q "Videos <videos@$DOMAIN>")"
+    else
+      echo "MAIL_PROVIDER=smtp"; echo "SMTP_URL=$(q "$SMTP_URL")"; echo "MAIL_FROM=$(q "$MAIL_FROM")"
+    fi
     echo; echo "# Storage, set by the installer"; echo "S3_ENDPOINT=$(q "$S3_ENDPOINT")"; echo "S3_REGION=$(q "$S3_REGION")"
     echo "S3_BUCKET=$(q "$S3_BUCKET")"; echo "S3_ACCESS_KEY_ID=$(q "$S3_ACCESS_KEY_ID")"; echo "S3_SECRET_ACCESS_KEY=$(q "$S3_SECRET_ACCESS_KEY")"; } >> "$SETTINGS.new"
   chown root:ulka-vms "$SETTINGS.new"; chmod 640 "$SETTINGS.new"
@@ -408,6 +470,10 @@ else
   note "Then close sign-up to strangers: set SIGNUP=closed in $SETTINGS and run"
   note "  sudo systemctl restart ulka-vms-api"
   note "If the page doesn't open, check your server provider's firewall lets in ports 80 and 443."
+  if grep -q '^MAIL_PROVIDER=log' "$SETTINGS"; then
+    note "Email is off: invitations and password resets are written to the log (sudo journalctl -u ulka-vms-api)."
+    note "To send them, set MAIL_PROVIDER=smtp and SMTP_URL in $SETTINGS, then restart ulka-vms-api and ulka-vms-worker."
+  fi
 fi
 note "Settings: $SETTINGS   Upgrade: run this installer again."
 printf '%s    Install log: %s%s\n' "$dim" "$LOG" "$reset"
