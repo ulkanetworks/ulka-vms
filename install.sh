@@ -153,7 +153,12 @@ STARTED=true
 
 if [ "$STATE" = fresh ]; then
   step "A few questions"
-  ask DOMAIN "Your domain (videos., player. and origin. will be made under it)"
+  public_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
+  note "First, a domain you own, like example.com (or a part of one, like vms.example.com). Ulka VMS uses three"
+  note "addresses under it: videos. for the console, player. where viewers watch, and origin. for the video files."
+  note "In your DNS, add an A record for each one pointing at ${public_ip:-the public IP address of this server}."
+  note "You can add them while this runs: the next step checks them."
+  ask DOMAIN "Your domain"
   DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%/}
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || fail "\"$DOMAIN\" isn't a domain, like example.com."
   CONSOLE_HOST="videos.$DOMAIN"; PLAYER_HOST="player.$DOMAIN"; ORIGIN_HOST="origin.$DOMAIN"
@@ -179,7 +184,6 @@ fi
 
 if [ "$STATE" = fresh ]; then
   step "Checking your domain points here"
-  public_ip=$(curl -fsS4 --max-time 10 https://api.ipify.org || true)
   preset=${CONTINUE:-} # CONTINUE=skip in the environment goes on without the check
   while true; do
     missing=()
