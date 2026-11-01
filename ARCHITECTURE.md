@@ -47,6 +47,21 @@ A module owns its tables and its generated queries; others call its `public.go`.
 5. A viewer opens `<PLAYER_URL>/<library>/<video>`: the API serves the playlists and key (checking the signature and
    access rules), and segments come from the origin or the workspace's CDN.
 
+## Video keys
+
+Every video is encrypted (HLS AES-128) with its own key, made at plan time. `KEY_SERVICE` says where keys live:
+
+| `KEY_SERVICE` | Where the key is | Who hands it to players |
+|---|---|---|
+| local | sealed in `assets` with `SEAL_KEY` (`core.Seal`) | the player host, after checking the signature and access rules |
+| securedrm | SecureDRM, Ulka Networks' hosted key service; the database keeps only the IV | SecureDRM, to a player carrying a short-lived token this server signed |
+
+Both are a `core.KeyStore` behind `Deps.Keys` (nil means local); `app/keys.go` picks one at start. With securedrm, a
+refused API key stops start-up and an unreachable service only warns. The `securedrm` package is the client of
+SecureDRM's public API only: how SecureDRM stores and protects keys stays inside that service. An application built
+on Ulka VMS can plug in its own `core.KeyStore` instead. Switching applies to new videos: ones encrypted with
+database keys play only while `KEY_SERVICE` is local.
+
 ## Building on Ulka VMS
 
 The hosted Ulka is an application built on these packages. Anyone can build one the same way:
@@ -89,7 +104,8 @@ one archive per processor (`ulka-vms-linux-amd64.tar.gz`, `…-arm64.tar.gz`) ho
 it asks for the domain and email settings (or reads them from the environment), checks the three names point at the
 server, installs what Ulka VMS runs on, writes /etc/ulka-vms/ulka-vms.env with generated secrets, starts the data
 services, migrates, and starts the API, worker and HTTPS proxy as services. On a later run it finds the settings and
-upgrades in place: new program and console, migrations, restart. Its messages speak of what it does, not the tools
+upgrades in place: new program and console, settings the release added (with their `.env.example` defaults),
+migrations, restart. Its messages speak of what it does, not the tools
 underneath; their output goes to a log it names. `SELF-HOSTING.md` has the same steps by hand.
 
 | Path on a server | What |
