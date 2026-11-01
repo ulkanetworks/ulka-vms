@@ -239,7 +239,7 @@ lacks, then:
 
 ```sh
 cd /opt/ulka-vms
-sudo git fetch --tags && sudo git checkout v0.2.0          # the new release
+sudo git fetch --tags && sudo git checkout v0.1.1          # the new release: see the Releases page
 sudo chown -R "$USER" /opt/ulka-vms
 go build -o bin/ulka-vms ./cmd/ulka-vms && (cd web && npm ci && npm run build)
 sudo docker compose --env-file /etc/ulka-vms/ulka-vms.env up -d
