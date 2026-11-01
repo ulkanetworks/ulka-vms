@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 
@@ -85,15 +86,14 @@ func (w *module) encodeChunk(ctx context.Context, ref AssetRef, lane string, chu
 			"-g", strconv.Itoa(gop), "-keyint_min", strconv.Itoa(gop), "-sc_threshold", "0",
 			filepath.Join(dir, r.Name+".mp4"))
 	}
-	frames := p.ChunkFrames
-	if chunk == p.Chunks-1 { // the last piece runs to the end of the video
-		frames = int(math.Ceil(work.DurationSeconds*fps)) - chunk*p.ChunkFrames
-	}
-	if rungs[0].Half { // progress counts the first output's frames
-		frames /= 2
-	}
-	if err := FfmpegProgress(ctx, frames, report, args...); err != nil {
+	// Progress counts the first output's frames.
+	if err := FfmpegProgress(ctx, pieceFrames(p, rungs[0], chunk, work.DurationSeconds, fps), report, args...); err != nil {
 		return err
+	}
+	for _, r := range rungs {
+		if err := checkPiece(ctx, filepath.Join(dir, r.Name+".mp4"), pieceFrames(p, r, chunk, work.DurationSeconds, fps)); err != nil {
+			return fmt.Errorf("%s piece %d: %w", r.Name, chunk, err)
+		}
 	}
 	for _, r := range rungs {
 		if err := w.Store.PutFile(ctx, workKey(ref, fmt.Sprintf("%s/%d.mp4", r.Name, chunk)), filepath.Join(dir, r.Name+".mp4")); err != nil {
@@ -101,6 +101,38 @@ func (w *module) encodeChunk(ctx context.Context, ref AssetRef, lane string, chu
 		}
 	}
 	return w.finishTask(ctx, ref, lane, chunk)
+}
+
+// pieceFrames is how many frames rung r's piece holds: ChunkFrames, or up to the end of the video for the last one,
+// halved for a rung at half the frame rate.
+func pieceFrames(p Plan, r Rung, chunk int, durationSeconds, fps float64) int {
+	frames := p.ChunkFrames
+	if chunk == p.Chunks-1 {
+		frames = int(math.Ceil(durationSeconds*fps)) - chunk*p.ChunkFrames
+	}
+	if r.Half {
+		frames /= 2
+	}
+	return frames
+}
+
+// checkPiece refuses an encoded piece with fewer frames than planned. When the source's network read ends early,
+// ffmpeg takes it for the end of the video and exits cleanly; uploaded, that piece would fail packaging on every try.
+// A few frames short is rounding at the video's end.
+func checkPiece(ctx context.Context, path string, want int) error {
+	out, err := sandboxed(ctx, "ffprobe", "-v", "error", "-select_streams", "v:0", "-count_packets",
+		"-show_entries", "stream=nb_read_packets", "-of", "csv=p=0", path).Output()
+	if err != nil {
+		return fmt.Errorf("counting frames: %w", err)
+	}
+	got, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return fmt.Errorf("counting frames: %q", out)
+	}
+	if got < want-max(3, want/50) {
+		return fmt.Errorf("%d frames of %d: the source's read ended early", got, want)
+	}
+	return nil
 }
 
 func parseFPS(s string) (float64, error) {
