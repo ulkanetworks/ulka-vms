@@ -19,7 +19,8 @@ the storage address (S3 endpoint, like `https://s3.eu-central-1.amazonaws.com` o
    ```sh
    curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
    ```
-   It asks for your domain, your email service's SMTP address and your storage details, checks the bucket works and
+   It asks for your domain, your email service's SMTP address (optional: skip it and emails are written to the server's
+   log until you add one) and your storage details, checks the bucket works and
    the names point at the server, installs everything, makes every other secret, and starts it with HTTPS. It takes
    about five minutes.
 3. Open `https://videos.<your domain>/signup` and create your account.
@@ -30,7 +31,8 @@ set `DOMAIN`, `SMTP_URL`, `MAIL_FROM` and the five `S3_` settings (`S3_ENDPOINT`
 
 ### If it stops
 
-Fix what its message names and run the same command again: it picks up where it stopped, with the answers it saved.
+A wrong answer is asked again on the spot, and a bucket that doesn't work says why in plain words and lets you correct
+the details. If it stops anyway, fix what its message names and run the same command again: it picks up where it stopped, with the answers it saved.
 It checks before it changes anything: that the server runs Ubuntu 22.04+ or Debian 12+ with systemd, has 10 GB of disk
 free, and has no other program on the ports it needs (80, 443 and a few on 127.0.0.1); that your bucket can be
 written, read and cleaned up. On an upgrade, a bucket that stopped working stops it before the running server is

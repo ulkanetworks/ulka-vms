@@ -29,10 +29,13 @@ func CheckEnv(get func(string) string) (errs, warns []string) {
 			bad("%s is %s, an example value: set the real address", name, get(name))
 		}
 	}
-	for _, name := range []string{"MAIL_PROVIDER", "MAIL_FALLBACK"} {
-		if get(name) == "log" {
-			bad("%s=log only writes emails to the log: nobody would get a password reset or invitation", name)
-		}
+	// Running without email is allowed (the installer offers it), but never silently, and never as a fallback that
+	// would hide a broken provider.
+	if get("MAIL_PROVIDER") == "log" {
+		warns = append(warns, "MAIL_PROVIDER=log: emails (invitations, password resets) are only written to this log, not sent; set SMTP_URL to send them")
+	}
+	if get("MAIL_FALLBACK") == "log" {
+		bad("MAIL_FALLBACK=log would hide a failing email provider: emails would quietly go to the log instead")
 	}
 	if a, err := mail.ParseAddress(get("MAIL_FROM")); err == nil {
 		if _, host, _ := strings.Cut(a.Address, "@"); Placeholder(host) {
