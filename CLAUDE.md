@@ -1,7 +1,7 @@
 # Ulka VMS
 
-Open-source video platform: one Go binary (`ulka-vms`: API, worker, migrations, limits), Postgres, S3-compatible
-storage, ClickHouse, and a React console in `web/` (Vite, TanStack Router and Query, coss ui on Base UI). The
+Open-source video platform: one Go binary (`ulka-vms`: API, worker, origin, migrations, limits), Postgres, S3-compatible
+storage (always outside the server), ClickHouse, and a React console in `web/` (Vite, TanStack Router and Query, coss ui on Base UI). The
 hosted Ulka imports these packages and adds its own through `app.Extension`, so every package here is a public API:
 see `ARCHITECTURE.md`.
 
@@ -11,7 +11,7 @@ read the rules file of each area the task touches.
 
 | Area | Go | Console (`web/src`) | Rules |
 |---|---|---|---|
-| Videos: libraries, uploads, playback, signing, delivery, checks | `video`, `player`, `securedrm` | `components/library`, `routes/_app/videos`, `routes/$lib` | `video.md` |
+| Videos: libraries, uploads, playback, signing, delivery, checks | `video`, `player`, `origin`, `securedrm` | `components/library`, `routes/_app/videos`, `routes/$lib` | `video.md` |
 | The player (Shaka skin, embed) | | `components/player` | `player.md` |
 | Encoding | `transcoder` | | `transcoder.md` |
 | Accounts: sign-in, members, invites, settings, API keys, limits | `accounts`, `app/limits.go` | `routes/_auth`, `routes/_app/members.tsx`, `routes/_app/settings.tsx` | this file |
@@ -28,6 +28,7 @@ read the rules file of each area the task touches.
 set -a; . ./.env; set +a                 # every Go command needs the environment
 go build ./... && go vet ./...           # never a bare `go build ./cmd/ulka-vms`: it drops a binary at the root
 go test ./...                            # e2e needs the compose services: docker compose up -d
+go run ./cmd/ulka-vms origin             # segments for local playback (beside api and worker)
 go test ./e2e/ -run TestName
 sqlc generate                            # after changing migrations/ or */queries/
 go run ./cmd/ulka-vms migrate            # apply migrations to the dev database

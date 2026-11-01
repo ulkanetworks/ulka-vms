@@ -267,11 +267,7 @@ func (s *module) serveDownload(w http.ResponseWriter, r *http.Request, p playbac
 }
 
 // logDelivery adds the download as one line of origin_access_logs (deploy/clickhouse/20-video-delivery.sql), the
-// same shape the origin's Vector ships, so video_delivery_hourly and Usage count it with the segments.
+// same table the origin writes, so video_delivery_hourly and Usage count it with the segments.
 func (s *module) logDelivery(r *http.Request, p playback, status int, sent int64, took time.Duration) {
-	s.deliveries.Add(map[string]any{
-		"ts": time.Now().UTC().Format(time.DateTime), "client_addr": core.ClientIP(r, s.TrustedProxies).String(),
-		"method": r.Method, "uri": "/s/" + p.tenantID.String() + "/" + p.assetID.String() + "/download.mp4",
-		"status": status, "body_bytes": sent, "request_time": took.Seconds(), "user_agent": r.UserAgent(), "referer": r.Referer(),
-	})
+	s.deliveries.Add(core.DeliveryRow(r, s.TrustedProxies, "/s/"+p.tenantID.String()+"/"+p.assetID.String()+"/download.mp4", status, sent, took))
 }

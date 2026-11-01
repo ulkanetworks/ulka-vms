@@ -9,7 +9,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags='-s -w' -o "$o
 [ -d web/dist ] || (cd web && npm ci && npm run build)
 cp -R web/dist "$out/web"
 cp compose.yaml .env.example "$out/"
-cp -R deploy/clickhouse deploy/clickhouse-config deploy/vector deploy/otel-collector deploy/systemd deploy/origin.conf.template deploy/Caddyfile "$out/deploy/"
+cp -R deploy/clickhouse deploy/clickhouse-config deploy/otel-collector deploy/systemd deploy/Caddyfile "$out/deploy/"
 echo "$version" > "$out/VERSION"
 tar --no-xattrs -czf "$out.tar.gz" -C "$out" . # no macOS file attributes when made on a Mac
 echo "$out.tar.gz"

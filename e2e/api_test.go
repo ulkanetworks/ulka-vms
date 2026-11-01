@@ -30,6 +30,7 @@ import (
 	"github.com/ulkanetworks/ulka-vms/app"
 	"github.com/ulkanetworks/ulka-vms/core"
 	"github.com/ulkanetworks/ulka-vms/migrations"
+	"github.com/ulkanetworks/ulka-vms/origin"
 )
 
 // harness runs the API against a migrated database, connected as ulka_app, and a real S3 bucket.
@@ -38,6 +39,7 @@ type harness struct {
 	pool    *pgxpool.Pool
 	store   core.Storage
 	ts      *httptest.Server
+	origin  *httptest.Server // serves segments, like `ulka-vms origin`
 	handler http.Handler
 	cfg     app.Config
 	// stopEncoder stops the test node that encodes video, for tests that drive the scheduler by hand.
@@ -133,16 +135,19 @@ func newHarnessFull(t *testing.T, configure func(*app.Config), ext app.Extension
 	h.handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { handler.ServeHTTP(w, r) })
 	core.RouteSeen = exercised // TestMain checks every video route was reached (coverage_test.go)
 	h.ts = httptest.NewTLSServer(h.handler)
-	// Tests read segments straight from the bucket; production puts nginx here.
+	// Segments come through the origin, reading the private bucket, as in production.
+	trusted := []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
+	h.origin = httptest.NewServer(&origin.Origin{Store: store, Deliveries: core.NewClickHouseLog(env("TEST_CLICKHOUSE_URL"), "origin_access_logs"), Trusted: trusted})
+	t.Cleanup(h.origin.Close)
 	h.cfg = app.Config{
 		PublicURL:     h.ts.URL,
-		OriginURL:     env("S3_ENDPOINT") + "/" + store.Bucket,
+		OriginURL:     h.origin.URL + "/s",
 		PlayerURL:     h.ts.URL + "/play",
 		SignupOpen:    true,
 		ClickHouseURL: env("TEST_CLICKHOUSE_URL"),
 		SealKey:       testSealKey,
 		// Requests come from this machine; a test names the viewer with X-Forwarded-For, as a proxy would.
-		TrustedProxies: []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")},
+		TrustedProxies: trusted,
 	}
 	if configure != nil {
 		configure(&h.cfg)

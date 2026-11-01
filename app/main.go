@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log/slog"
+	"net/netip"
 	"net/url"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/credentials"
@@ -25,7 +27,7 @@ func Main(ext Extension) {
 	if ext.Name == "" {
 		ext.Name = "ulka-vms"
 	}
-	commands := append([]string{"migrate", "api", "worker", "limits"}, slices.Sorted(func(yield func(string) bool) {
+	commands := append([]string{"migrate", "api", "worker", "origin", "check-storage", "limits"}, slices.Sorted(func(yield func(string) bool) {
 		for name := range ext.Commands {
 			if !yield(name) {
 				return
@@ -46,12 +48,8 @@ func Main(ext Extension) {
 		err = core.Migrate(ctx, MustEnv("MIGRATE_DATABASE_URL"), ext.migrationSets()...)
 	case cmd == "api":
 		cfg := newConfig(ext)
-		proxies, perr := ParseProxies(MustEnv("TRUSTED_PROXIES"))
-		if perr != nil {
-			slog.Error("invalid environment variable", "err", perr)
-			os.Exit(1)
-		}
-		cfg.TrustedProxies = proxies
+		cfg.TrustedProxies = mustProxies()
+		var perr error
 		// Without the IP country database only libraries' country rules are off; all else serves.
 		if path := os.Getenv("GEOIP_DB"); path == "" {
 			slog.Warn("country rules are off: GEOIP_DB is not set")
@@ -71,6 +69,14 @@ func Main(ext Extension) {
 			os.Exit(1)
 		}
 		err = RunWorker(ctx, MustEnv("DATABASE_URL"), newStorage(), newConfig(ext), queues, slots, ext)
+	case cmd == "origin":
+		err = ServeOrigin(ctx, MustEnv("ORIGIN_ADDR"), newStorage(), MustURL("CLICKHOUSE_URL"), mustProxies())
+	case cmd == "check-storage":
+		cctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		if err = newStorage().Check(cctx); err == nil {
+			fmt.Println("Storage works: the bucket can be written, read and cleaned up.")
+		}
+		cancel()
 	case cmd == "limits":
 		err = SetLimits(ctx, MustEnv("MIGRATE_DATABASE_URL"), core.ExtraLimitDefaults, os.Args[2:])
 	case ext.Commands[cmd] != nil:
@@ -93,6 +99,16 @@ func MustEnv(name string) string {
 		os.Exit(1)
 	}
 	return v
+}
+
+// mustProxies is TRUSTED_PROXIES: the proxies whose X-Forwarded-For names the caller.
+func mustProxies() []netip.Prefix {
+	proxies, err := ParseProxies(MustEnv("TRUSTED_PROXIES"))
+	if err != nil {
+		slog.Error("invalid environment variable", "err", err)
+		os.Exit(1)
+	}
+	return proxies
 }
 
 // MustOneOf is a setting that must name one of choices.

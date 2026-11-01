@@ -46,7 +46,7 @@ jobs:
       - name: Data services (compose.yaml)
         run: |
           set -a; . ./.env; set +a
-          # Only what the tests use: no origin, log shipping or telemetry collector to pull.
+          # Only what the tests use: no telemetry collector to pull.
           docker compose up -d --quiet-pull postgres seaweedfs clickhouse
           # until-loops: a failing probe is a loop condition, which bash -e leaves alone. SeaweedFS refuses a root listing, so any answer counts.
           timeout 120 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -q; do sleep 2; done'
@@ -114,17 +114,18 @@ jobs:
       - name: Data services, migrations, API and worker
         run: |
           set -a; . ./.env; set +a
-          # The origin serves the video pieces the browser plays; log shipping and the telemetry collector aren't needed.
-          docker compose up -d --quiet-pull postgres seaweedfs clickhouse origin
+          # The telemetry collector isn't needed.
+          docker compose up -d --quiet-pull postgres seaweedfs clickhouse
           timeout 120 bash -c 'until docker compose exec -T postgres pg_isready -U postgres -q; do sleep 2; done'
           timeout 120 bash -c 'until curl -fs http://localhost:8124/ping >/dev/null; do sleep 2; done'
           timeout 120 bash -c 'until curl -s -o /dev/null http://localhost:8334/; do sleep 2; done'
-          # The bucket, as SELF-HOSTING.md makes it.
+          # The bucket, made by hand as in any S3-compatible store.
           echo "s3.bucket.create -name $S3_BUCKET" | docker compose exec -T seaweedfs weed shell
           go build -o /tmp/ulka-vms ./cmd/ulka-vms
           /tmp/ulka-vms migrate
           nohup /tmp/ulka-vms api > /tmp/api.log 2>&1 &
           nohup /tmp/ulka-vms worker > /tmp/worker.log 2>&1 &
+          nohup /tmp/ulka-vms origin > /tmp/origin.log 2>&1 &
           timeout 60 bash -c 'until curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta; do sleep 1; done' || { tail -40 /tmp/api.log; exit 1; }
       - name: Console page tests
         working-directory: web
@@ -135,7 +136,7 @@ jobs:
           PLAYWRIGHT_CHANNEL=chrome npm run pages
       - name: Logs on failure
         if: failure()
-        run: tail -n 80 /tmp/api.log /tmp/worker.log || true; docker compose logs --tail 50
+        run: tail -n 80 /tmp/api.log /tmp/worker.log /tmp/origin.log || true; docker compose logs --tail 50
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

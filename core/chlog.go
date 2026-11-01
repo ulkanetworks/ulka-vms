@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net/http"
+	"net/netip"
 	"sync"
 	"time"
 )
@@ -103,5 +105,18 @@ func DrainLogs(ctx context.Context) {
 			slog.Error("usage not drained before exit", "table", l.table)
 			return
 		}
+	}
+}
+
+// DeliveryRow is one response in origin_access_logs, where video delivery is metered: the origin's segments and the
+// API's downloads. uri is /s/<workspace>/<video>/…, from which ClickHouse takes the workspace.
+func DeliveryRow(r *http.Request, trusted []netip.Prefix, uri string, status int, sent int64, took time.Duration) map[string]any {
+	addr := "::" // the column is IPv6: an unknown address is the zero one
+	if ip := ClientIP(r, trusted); ip.IsValid() {
+		addr = ip.String()
+	}
+	return map[string]any{
+		"ts": time.Now().UTC().Format(time.DateTime), "client_addr": addr, "method": r.Method, "uri": uri,
+		"status": status, "body_bytes": sent, "request_time": took.Seconds(), "user_agent": r.UserAgent(), "referer": r.Referer(),
 	}
 }

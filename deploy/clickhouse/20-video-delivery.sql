@@ -1,4 +1,4 @@
--- The video origin's access log (nginx, shipped by Vector). Segment paths are /s/<tenant>/<asset>/<rendition>/<file>.
+-- The video origin's access log, written by `ulka-vms origin` and the API's downloads. Segment paths are /s/<tenant>/<asset>/<rendition>/<file>.
 -- Sorted by tenant then time, so one tenant's lines (a billing dispute) are read without scanning everyone's.
 CREATE TABLE IF NOT EXISTS origin_access_logs (
     ts           DateTime,

@@ -1,7 +1,7 @@
 # The front door on a server: HTTPS for three host names, each pointing at this machine first. Caddy reads them from
 # its environment: CONSOLE_HOST (PUBLIC_URL's host, also serving the docs), PLAYER_HOST (PLAYER_URL's), ORIGIN_HOST
-# (ORIGIN_URL's), API_ADDR (where `ulka-vms api` listens), ORIGIN_UPSTREAM (the nginx origin, 127.0.0.1:8092 with
-# compose.yaml) and WEB_ROOT (the console's built files, web/dist). Caddy gets the certificates by itself.
+# (ORIGIN_URL's), API_ADDR (where `ulka-vms api` listens), ORIGIN_UPSTREAM (where `ulka-vms origin` listens,
+# its ORIGIN_ADDR) and WEB_ROOT (the console's built files, web/dist). Caddy gets the certificates by itself.
 
 {
 	servers {
@@ -65,7 +65,7 @@
 	}
 }
 
-# Video segments from the nginx origin; browsers and CDNs keep them for a year.
+# Video segments from `ulka-vms origin`; browsers and CDNs keep them for a year.
 {$ORIGIN_HOST} {
 	reverse_proxy {$ORIGIN_UPSTREAM}
 }
