@@ -173,6 +173,7 @@ func newConfig(ext Extension) Config {
 		SignupOpen:    MustOneOf("SIGNUP", []string{"open", "closed"}) == "open",
 		ClickHouseURL: MustURL("CLICKHOUSE_URL"),
 	}
+	cfg.Keys = keyService()
 	if ext.Configure != nil {
 		ext.Configure(&cfg)
 	}

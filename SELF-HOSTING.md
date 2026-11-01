@@ -188,6 +188,25 @@ curl -fsSL "https://download.db-ip.com/free/dbip-country-lite-$(date -u +%Y-%m).
 
 Set `GEOIP_DB=/opt/ulka-vms/data/geo/country.mmdb` and restart the API.
 
+## Optional: keep video keys off your server
+
+Every video is encrypted with its own key. By default (`KEY_SERVICE=local`) the keys are sealed in your database and
+your player host hands them to viewers. If you'd rather not hold keys yourself, SecureDRM, Ulka Networks' hosted key
+service, can keep them: the server asks it for each video's key, and players fetch the key from SecureDRM with a
+short-lived link the server signs.
+
+Ask Ulka Networks for a SecureDRM account, then set the four values it gives you and restart the API and the worker:
+
+```sh
+KEY_SERVICE=securedrm
+SECUREDRM_URL=https://b.securedrm.link
+SECUREDRM_API_KEY=...
+SECUREDRM_TOKEN_KID=...
+SECUREDRM_TOKEN_SECRET=...
+```
+
+Switch before uploading: videos encrypted with database keys keep playing only while `KEY_SERVICE=local`.
+
 ## Backups
 
 What to keep, and how:
@@ -204,7 +223,9 @@ Test a restore before you need one.
 
 ## Updating
 
-Read [CHANGELOG.md](CHANGELOG.md) first. If you installed with the one command, run it again. By hand:
+Read [CHANGELOG.md](CHANGELOG.md) first. If you installed with the one command, run it again: it also adds
+settings a new release needs, with their defaults. By hand, copy any setting in `.env.example` that your settings file
+lacks, then:
 
 ```sh
 cd /opt/ulka-vms

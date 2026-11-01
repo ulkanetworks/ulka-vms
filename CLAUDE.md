@@ -11,7 +11,7 @@ read the rules file of each area the task touches.
 
 | Area | Go | Console (`web/src`) | Rules |
 |---|---|---|---|
-| Videos: libraries, uploads, playback, signing, delivery, checks | `video`, `player` | `components/library`, `routes/_app/videos`, `routes/$lib` | `video.md` |
+| Videos: libraries, uploads, playback, signing, delivery, checks | `video`, `player`, `securedrm` | `components/library`, `routes/_app/videos`, `routes/$lib` | `video.md` |
 | The player (Shaka skin, embed) | | `components/player` | `player.md` |
 | Encoding | `transcoder` | | `transcoder.md` |
 | Accounts: sign-in, members, invites, settings, API keys, limits | `accounts`, `app/limits.go` | `routes/_auth`, `routes/_app/members.tsx`, `routes/_app/settings.tsx` | this file |

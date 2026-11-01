@@ -11,7 +11,8 @@ Ulka VMS is the open-source edition of the video platform behind [Ulka](https://
   from a link.
 - **Encoding for every screen:** each video is encoded into several qualities (HLS) in parallel pieces across your
   workers, with the low qualities playable first.
-- **Encrypted at rest and in playback:** every video gets its own AES-128 key, sealed in your database.
+- **Encrypted at rest and in playback:** every video gets its own AES-128 key, sealed in your database or kept by
+  SecureDRM, a hosted key service.
 - **Private videos:** signed playback links that expire, limited by website, country or viewer address, with an
   optional watermark of the viewer's name.
 - **A player to embed:** adaptive quality, chapters, captions, storyboard previews and keyboard shortcuts, styled per
@@ -85,7 +86,8 @@ cd web && npm test               # console unit tests
 ```
 
 The layout: `core` is the shared kernel (sign-in, permissions, errors, tenancy), `accounts`, `video`, `transcoder`,
-`player`, `webhooks`, `usage` and `notices` are the modules, `app` assembles them, `cmd/ulka-vms` is the binary,
+`player`, `webhooks`, `usage` and `notices` are the modules, `securedrm` is the client of the optional hosted key
+service, `app` assembles them, `cmd/ulka-vms` is the binary,
 `migrations` the Postgres schema and `web` the React console. [ARCHITECTURE.md](ARCHITECTURE.md) explains how they
 fit together and how to build on Ulka VMS.
 

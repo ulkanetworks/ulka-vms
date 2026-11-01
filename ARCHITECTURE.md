@@ -29,6 +29,7 @@ differ.
 | `player` | player settings and templates |
 | `webhooks` | endpoints, signed deliveries and retries |
 | `usage`, `notices` | monthly usage and limits; what needs a workspace's attention |
+| `securedrm` | the client of SecureDRM, the optional hosted key service (`KEY_SERVICE` securedrm); no tables |
 | `app` | assembly: routes, workers, queues, the command line, and the extension points |
 
 A module owns its tables and its generated queries; others call its `public.go`. `transcoder` imports only `core`.
@@ -69,7 +70,8 @@ The extension points:
 - `app.Extension`: settings and their checks, routes, workers, periodic jobs, queues, migrations, commands, the API
   description served (`OpenAPI`), and how a worker machine runs (`ServeNode`).
 - `video.Options`: a CDN the application runs (`ManagedCDN`), and how uploaded covers are redrawn (`ImageConvert`).
-- `core.KeyStore` on `core.Deps`: keep video keys in a key service instead of the database.
+- `core.KeyStore` on `core.Deps`: keep video keys in a key service instead of the database. Ulka VMS ships one,
+  SecureDRM (`securedrm/`, chosen with `KEY_SERVICE` securedrm).
 - `core.AddProduct`: a product of your own, granted by roles and API key scopes like video.
 - Lists you append to at start: `core.Messages`, `core.WebhookEvents`, `core.FieldRules`, `core.ExtraLimitDefaults`,
   `accounts.MetaProducts`, `accounts.Capabilities`, `accounts.ExtraMeta`, `usage.Units`, `usage.Used`,

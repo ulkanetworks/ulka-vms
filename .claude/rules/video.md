@@ -59,9 +59,10 @@ paths:
   new one also needs the spec's enum and `invalid_template`'s words.
 
 ## Keys, storage, uploads
-- Each video's AES-128 key is made at plan time and sealed in `assets` (`core.Seal`); the player host serves it. An
-  application built on Ulka VMS may keep keys in a key service instead (`core.KeyStore` on `Deps.Keys`): then only
-  the IV is stored, and playlists send players to the service. Never assign a nil pointer to `Deps.Keys`: an
+- Each video's AES-128 key is made at plan time and sealed in `assets` (`core.Seal`); the player host serves it. With
+  `KEY_SERVICE` set to securedrm (`app/keys.go`, the client in `securedrm/`), or an application's own `core.KeyStore` on
+  `Deps.Keys`, keys live in a key service instead: then only the IV is stored, and playlists send players to the
+  service. Never assign a nil pointer to `Deps.Keys`: an
   interface holding one isn't nil.
 - Storage keys are `<tenant>/<asset>/…`; deleting a video deletes the prefix, so per-video files go under it.
   Captions are WebVTT under it, added to the master playlist when served (`withCaptions`), never baked in.

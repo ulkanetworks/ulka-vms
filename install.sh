@@ -178,6 +178,15 @@ ORIGIN_UPSTREAM=127.0.0.1:8092
 WEB_ROOT=$APP_DIR/web
 EOF
   note "Saved in $SETTINGS. It holds the key your videos are encrypted with (SEAL_KEY): keep a copy somewhere safe."
+else
+  # Settings this release added get their defaults, so an upgrade starts without editing the file.
+  added=$(sed -e '/^# Tests/,$d' "$APP_DIR/.env.example" | grep -E '^[A-Z0-9_]+=' | while IFS= read -r line; do
+    grep -q "^${line%%=*}=" "$SETTINGS" || echo "$line"
+  done)
+  if [ -n "$added" ]; then
+    { echo; echo "# Added by the upgrade to $(cat "$APP_DIR/VERSION")"; echo "$added"; } >> "$SETTINGS"
+    note "New settings, with their defaults, added to $SETTINGS: $(echo "$added" | cut -d= -f1 | tr '\n' ' ')"
+  fi
 fi
 
 # --- Services -----------------------------------------------------------------------------------------------------
