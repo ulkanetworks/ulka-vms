@@ -11,8 +11,9 @@ program uses.
 | API | `ulka-vms api` | the public API, the console's API, and the player host's files (under `/play/`) |
 | Worker | `ulka-vms worker` | River jobs (probe, package, storyboard, downloads, webhooks, metering, clean-up) and encoding |
 | Migrations | `ulka-vms migrate` | River's schema, then each set of `migrations` in order |
-| nginx origin | `compose.yaml` | serves encrypted segments from storage; its access log becomes delivery usage |
-| Vector, ClickHouse | `compose.yaml` | ship the origin's log; hold delivery rollups and telemetry |
+| Origin | `ulka-vms origin` | serves encrypted segments from the private bucket with the server's storage key; each response is a delivery row in ClickHouse |
+| ClickHouse | `compose.yaml` | delivery rows and rollups, and telemetry |
+| S3-compatible storage | outside (`S3_*`) | sources, segments, covers, downloads; private, read only with the key |
 
 Workers are stateless and can run on many machines. `WORKER_QUEUES` chooses which job queues a machine works and
 `WORKER_ENCODE_SLOTS` how many video pieces it encodes at once, so an encoding machine and a webhook machine can
@@ -101,19 +102,23 @@ one archive per processor (`ulka-vms-linux-amd64.tar.gz`, `…-arm64.tar.gz`) ho
 `compose.yaml` and the service and proxy files. They are published with `install.sh` as the tag's GitHub Release.
 
 `install.sh` is the one-line install (`curl -fsSL …/releases/latest/download/install.sh | sudo bash`). On a first run
-it asks for the domain and email settings (or reads them from the environment), checks the three names point at the
-server, installs what Ulka VMS runs on, writes /etc/ulka-vms/ulka-vms.env with generated secrets, starts the data
-services, migrates, and starts the API, worker and HTTPS proxy as services. On a later run it finds the settings and
-upgrades in place: new program and console, settings the release added (with their `.env.example` defaults),
-migrations, restart. Its messages speak of what it does, not the tools
-underneath; their output goes to a log it names. `SELF-HOSTING.md` has the same steps by hand.
+it asks for the domain, email and storage settings (or reads them from the environment), checks the three names point
+at the server, installs what Ulka VMS runs on, checks the bucket with `ulka-vms check-storage` before writing
+anything, writes /etc/ulka-vms/ulka-vms.env with generated secrets, starts the data services, migrates, and starts the
+API, worker, origin and HTTPS proxy as services. On a later run it finds the settings and upgrades in place: new
+program and console, settings the release added (with their `.env.example` defaults), migrations, containers an
+earlier release ran removed, restart. Its messages speak of what it does, not the tools underneath; their output goes
+to a log it names. `SELF-HOSTING.md` has the same steps by hand.
+
+Servers keep no videos: storage is always an outside S3-compatible bucket, private, read only with the server's key.
+`compose.dev.yaml` adds a local stand-in for development and tests and is never shipped.
 
 | Path on a server | What |
 |---|---|
 | /opt/ulka-vms | the release: `bin/ulka-vms`, `web/`, `compose.yaml`, `deploy/` |
 | /etc/ulka-vms/ulka-vms.env | settings and secrets, `SEAL_KEY` among them |
 | /etc/ulka-vms/web.env | the three host names and where the proxy sends them |
-| Docker volumes | Postgres, the video storage, ClickHouse |
+| Docker volumes | Postgres, ClickHouse |
 
 ## Scaling
 

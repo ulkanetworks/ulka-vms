@@ -1,6 +1,15 @@
 # Running Ulka VMS on your own server
 
-Ulka VMS runs on one Ubuntu or Debian server, reachable over HTTPS at three addresses of your own.
+Ulka VMS runs on one Ubuntu or Debian server, reachable over HTTPS at three addresses of your own. Videos are kept in
+S3-compatible storage you choose (AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO or another), so the server's disk
+only holds the database and work in progress.
+
+## Before you start: storage
+
+In your storage provider's dashboard, make a **private** bucket and an access key that may read, write and delete in
+it. Nothing needs to be public: Ulka VMS reads the bucket with that key and serves the videos itself. Note four things:
+the storage address (S3 endpoint, like `https://s3.eu-central-1.amazonaws.com` or
+`https://<account>.r2.cloudflarestorage.com`), the region (`auto` on R2), the bucket name, and the key with its secret.
 
 ## The quick way: one command
 
@@ -10,12 +19,14 @@ Ulka VMS runs on one Ubuntu or Debian server, reachable over HTTPS at three addr
    ```sh
    curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
    ```
-   It asks for your domain and your email service's SMTP address, checks the names point at the server, installs
-   everything, makes every secret, and starts it with HTTPS. It takes about five minutes.
+   It asks for your domain, your email service's SMTP address and your storage details, checks the bucket works and
+   the names point at the server, installs everything, makes every other secret, and starts it with HTTPS. It takes
+   about five minutes.
 3. Open `https://videos.<your domain>/signup` and create your account.
 
 To upgrade later, run the same command: your settings and videos stay. To install without questions (from a script),
-set `DOMAIN`, `SMTP_URL` and `MAIL_FROM` in the environment first.
+set `DOMAIN`, `SMTP_URL`, `MAIL_FROM` and the five `S3_` settings (`S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`) in the environment first.
 
 The rest of this guide does the same by hand, for those who want to see or change each step.
 
@@ -25,8 +36,9 @@ Every command runs on the server as a user with `sudo`. It takes about an hour.
 
 ### What you need
 
-- **A server** with Ubuntu 24.04, a public IP address, and at least 4 CPU cores, 8 GB of memory and enough disk for
-  your videos. Encoding is the heavy part: more cores make videos ready sooner.
+- **A server** with Ubuntu 24.04, a public IP address, and at least 4 CPU cores, 8 GB of memory and 40 GB of disk.
+  Encoding is the heavy part: more cores make videos ready sooner.
+- **Storage:** the bucket and key from "Before you start".
 - **A domain** where you can add DNS records. The guide uses `example.com`; put your own everywhere.
 - **An email service** that can send through SMTP (or a Resend account), for invitations and password resets.
 
@@ -49,7 +61,7 @@ issued only for names that already point here.
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y git ffmpeg webp curl ufw
 
-# Docker, for Postgres, the storage, ClickHouse and the video origin
+# Docker, for Postgres and ClickHouse
 curl -fsSL https://get.docker.com | sudo sh
 
 # Shaka Packager, which turns encoded video into streams
@@ -100,15 +112,15 @@ Change these, and leave the rest as they are:
 
 | Setting | Value |
 |---|---|
-| `POSTGRES_PASSWORD`, `ULKA_APP_PASSWORD`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `CLICKHOUSE_PASSWORD` | each a new random value: `openssl rand -hex 24` |
+| `POSTGRES_PASSWORD`, `ULKA_APP_PASSWORD`, `CLICKHOUSE_PASSWORD` | each a new random value: `openssl rand -hex 24` |
 | `SEAL_KEY` | `openssl rand -base64 32`. It encrypts every video's key: **copy it somewhere safe off the server**. Without it, stored videos can't be played. |
 | `PUBLIC_URL`, `DOCS_URL` | `https://videos.example.com` |
 | `PLAYER_URL` | `https://player.example.com` |
 | `ORIGIN_URL` | `https://origin.example.com/s` |
 | `MAIL_PROVIDER`, `MAIL_FROM`, `SMTP_URL` | `smtp`, a sender like `Videos <videos@example.com>`, and `smtp://user:password@smtp.example.com:587` (or `resend` with `RESEND_API_KEY`) |
-| `S3_BUCKET` | a name for your video bucket, like `videos` |
+| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | your storage details |
 
-Delete the `# Tests` lines at the end: a server doesn't run them.
+Delete the `COMPOSE_FILE` line (it adds development's stand-in storage) and the `# Tests` lines at the end.
 
 Start-up checks these settings. Anything that only works on a laptop, such as a `localhost` address, `MAIL_PROVIDER=log`
 or an `example.com` address, stops it with a message saying which setting to fix.
@@ -118,34 +130,32 @@ or an `example.com` address, stops it with a message saying which setting to fix
 ```sh
 cd /opt/ulka-vms
 sudo docker compose --env-file /etc/ulka-vms/ulka-vms.env up -d
-# The bucket the videos go in (once)
-sudo sh -c '. /etc/ulka-vms/ulka-vms.env; echo "s3.bucket.create -name $S3_BUCKET" | docker compose --env-file /etc/ulka-vms/ulka-vms.env exec -T seaweedfs weed shell'
 ```
 
-Videos are stored by SeaweedFS in a Docker volume on this server. To use another S3-compatible store instead (AWS S3,
-Cloudflare R2, MinIO, Wasabi), set the `S3_*` settings to it, set `S3_PUBLIC_URL` to the bucket's own address, leave
-`COMPOSE_PROFILES` empty, and let anyone read only the segment files (`*.m4s` and `*/init.mp4`) with a bucket policy.
-
-### 6. Build and prepare the database
+### 6. Build, check the storage and prepare the database
 
 ```sh
 cd /opt/ulka-vms
 go build -o bin/ulka-vms ./cmd/ulka-vms
 (cd web && npm ci && npm run build)
+sudo sh -c 'set -a; . /etc/ulka-vms/ulka-vms.env; set +a; exec /opt/ulka-vms/bin/ulka-vms check-storage'
 sudo sh -c 'set -a; . /etc/ulka-vms/ulka-vms.env; set +a; exec /opt/ulka-vms/bin/ulka-vms migrate'
 sudo chown -R ulka-vms:ulka-vms /opt/ulka-vms
 ```
 
-### 7. Run the API and the worker as services
+`check-storage` writes, reads back and deletes a small file in the bucket; if it fails, its message says which.
+
+### 7. Run the API, the worker and the origin as services
 
 ```sh
-sudo cp /opt/ulka-vms/deploy/systemd/ulka-vms-api.service /opt/ulka-vms/deploy/systemd/ulka-vms-worker.service /etc/systemd/system/
+sudo cp /opt/ulka-vms/deploy/systemd/ulka-vms-{api,worker,origin}.service /etc/systemd/system/
 sudo systemctl daemon-reload
-sudo systemctl enable --now ulka-vms-api ulka-vms-worker
-systemctl status ulka-vms-api ulka-vms-worker --no-pager
+sudo systemctl enable --now ulka-vms-api ulka-vms-worker ulka-vms-origin
+systemctl status ulka-vms-api ulka-vms-worker ulka-vms-origin --no-pager
 ```
 
-Both should say `active (running)`. If one doesn't, `journalctl -u ulka-vms-api -n 50` says why.
+All three should say `active (running)`. If one doesn't, `journalctl -u ulka-vms-api -n 50` (or `-worker`, `-origin`)
+says why. The origin serves the video files from your bucket at `origin.example.com`.
 
 ### 8. Put HTTPS in front
 
@@ -216,8 +226,8 @@ What to keep, and how:
   ```sh
   cd /opt/ulka-vms && sudo sh -c '. /etc/ulka-vms/ulka-vms.env; docker compose --env-file /etc/ulka-vms/ulka-vms.env exec -T postgres pg_dump -U postgres -Fc "$POSTGRES_DB"' > ulka-vms-$(date +%F).dump
   ```
-- **The videos**: the SeaweedFS volume (or your S3 store's own backups). Copy the bucket to another store with any
-  S3 tool, such as `rclone sync`.
+- **The videos**: in your storage provider. Turn on its versioning or replication, or copy the bucket to another
+  store with any S3 tool, such as `rclone sync`.
 
 Test a restore before you need one.
 
@@ -240,7 +250,7 @@ sudo systemctl restart ulka-vms-api ulka-vms-worker
 
 ## When it grows
 
-- **More encoding:** run more workers on other machines. Each needs the same settings, with the database, storage
-  and ClickHouse addresses reachable from it over a private network, and only `ulka-vms-worker` running.
+- **More encoding:** run more workers on other machines. Each needs the same settings, with the database and
+  ClickHouse reachable from it over a private network, and only `ulka-vms-worker` running.
 - **More viewers:** put a CDN in front of the origin under **Video → Defaults → Delivery**. The page has the steps
   for each CDN, Ulka CDN among them.

@@ -1,7 +1,9 @@
 package core
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -92,4 +94,24 @@ func (st Storage) ReadObject(ctx context.Context, key string) ([]byte, error) {
 	}
 	defer obj.Body.Close()
 	return io.ReadAll(obj.Body)
+}
+
+// Check writes, reads back and deletes a small file, proving the bucket exists and the key may do all three.
+func (st Storage) Check(ctx context.Context) error {
+	key := "storage-check/" + time.Now().UTC().Format("20060102T150405.000000000")
+	want := []byte("ok")
+	if _, err := st.S3.PutObject(ctx, &s3.PutObjectInput{Bucket: &st.Bucket, Key: &key, Body: bytes.NewReader(want)}); err != nil {
+		return fmt.Errorf("writing a file to bucket %q: %w", st.Bucket, err)
+	}
+	got, err := st.ReadObject(ctx, key)
+	if err != nil {
+		return fmt.Errorf("reading a file back from bucket %q: %w", st.Bucket, err)
+	}
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("bucket %q gave back different contents than were written", st.Bucket)
+	}
+	if _, err := st.S3.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: &st.Bucket, Key: &key}); err != nil {
+		return fmt.Errorf("deleting a file from bucket %q: %w", st.Bucket, err)
+	}
+	return nil
 }

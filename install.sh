@@ -3,8 +3,9 @@
 #
 #   curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
 #
-# It asks for your domain and email settings (or reads DOMAIN, SMTP_URL and MAIL_FROM from the environment), makes
-# every secret, and starts everything. Run it again to upgrade: your settings and videos stay.
+# It asks for your domain, email and storage settings (or reads DOMAIN, SMTP_URL, MAIL_FROM and S3_ENDPOINT, S3_REGION,
+# S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY from the environment), makes every other secret, and starts
+# everything. Videos are kept in your S3-compatible storage, not on this server. Run it again to upgrade.
 # ULKA_VMS_ARCHIVE=/path/to/ulka-vms-linux-<arch>.tar.gz installs from a file instead of downloading.
 set -euo pipefail
 
@@ -53,9 +54,11 @@ ask() { # ask VAR "question" [default]
     return
   fi
   if [ -n "$default" ]; then question="$question [$default]"; fi
-  read -r -p "    $question: " answer </dev/tty
+  read -r ${SILENT:+-s} -p "    $question: " answer </dev/tty
+  [ -n "${SILENT:-}" ] && echo
   printf -v "$var" '%s' "${answer:-$default}"
 }
+ask_secret() { SILENT=1 ask "$@"; } # typed without showing
 
 # --- Checks -------------------------------------------------------------------------------------------------------
 
@@ -85,6 +88,15 @@ if ! $UPGRADE; then
   ask SMTP_URL "SMTP address"
   [[ "$SMTP_URL" =~ ^smtps?:// ]] || fail "the SMTP address must start with smtp:// or smtps://."
   ask MAIL_FROM "Send email as" "Videos <videos@$DOMAIN>"
+  note "Videos are kept in S3-compatible storage: AWS S3, Cloudflare R2, Backblaze B2, Wasabi, MinIO or another."
+  note "Make a private bucket there, and a key that may read, write and delete in it. Nothing needs to be public."
+  ask S3_ENDPOINT "Storage address, like https://s3.eu-central-1.amazonaws.com or https://<account>.r2.cloudflarestorage.com"
+  S3_ENDPOINT=${S3_ENDPOINT%/}
+  [[ "$S3_ENDPOINT" =~ ^https?://[^/]+$ ]] || fail "the storage address must be like https://storage.example.com, with nothing after the name."
+  ask S3_REGION "Region (R2 takes auto)" "us-east-1"
+  ask S3_BUCKET "Bucket name"
+  ask S3_ACCESS_KEY_ID "Access key ID"
+  ask_secret S3_SECRET_ACCESS_KEY "Secret access key"
 fi
 
 # --- DNS ----------------------------------------------------------------------------------------------------------
@@ -146,6 +158,20 @@ cp -a "$work/release/." "$APP_DIR/"
 chown -R ulka-vms:ulka-vms "$APP_DIR"
 note "Version $(cat "$APP_DIR/VERSION")."
 
+# --- Storage ------------------------------------------------------------------------------------------------------
+
+if ! $UPGRADE; then
+  step "Checking your storage"
+  export S3_ENDPOINT S3_REGION S3_BUCKET S3_ACCESS_KEY_ID S3_SECRET_ACCESS_KEY
+  if ! checked=$("$APP_DIR/bin/ulka-vms" check-storage 2>&1); then
+    echo "$checked" >>"$LOG"; echo "$checked" >&2
+    fail "the bucket couldn't be written, read and cleaned up with these details (the reason is above). Check the address, region, bucket name and key, then run the installer again."
+  fi
+  note "The bucket works."
+elif grep -q '^COMPOSE_PROFILES=seaweedfs' "$SETTINGS"; then
+  fail "this install keeps videos in storage on this server, which this release no longer runs. Copy the bucket to S3-compatible storage, set S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY in $SETTINGS to it, delete the S3_PUBLIC_URL and COMPOSE_PROFILES lines, and run the installer again."
+fi
+
 # --- Settings (first install only) --------------------------------------------------------------------------------
 
 if ! $UPGRADE; then
@@ -153,21 +179,20 @@ if ! $UPGRADE; then
   mkdir -p "$CONFIG_DIR"
   secret() { openssl rand -hex 24; }
   q() { printf '%q' "$1"; } # quoted for the sh that reads the file: names and passwords may hold spaces or <>
-  sed -e '/^# Tests/,$d' -e '/^SMTP_URL=/d' -e '/^MAIL_FROM=/d' -e '/^MAIL_PROVIDER=/d' \
+  sed -e '/^# Tests/,$d' -e '/^SMTP_URL=/d' -e '/^MAIL_FROM=/d' -e '/^MAIL_PROVIDER=/d' -e '/^S3_/d' -e '/^COMPOSE_FILE=/d' \
       -e "s|^POSTGRES_PASSWORD=.*|POSTGRES_PASSWORD=$(secret)|" \
       -e "s|^ULKA_APP_PASSWORD=.*|ULKA_APP_PASSWORD=$(secret)|" \
-      -e "s|^S3_ACCESS_KEY_ID=.*|S3_ACCESS_KEY_ID=$(secret)|" \
-      -e "s|^S3_SECRET_ACCESS_KEY=.*|S3_SECRET_ACCESS_KEY=$(secret)|" \
       -e "s|^CLICKHOUSE_PASSWORD=.*|CLICKHOUSE_PASSWORD=$(secret)|" \
       -e "s|^SEAL_KEY=.*|SEAL_KEY=$(openssl rand -base64 32)|" \
       -e "s|^PUBLIC_URL=.*|PUBLIC_URL=https://$CONSOLE_HOST|" \
       -e "s|^DOCS_URL=.*|DOCS_URL=https://$CONSOLE_HOST|" \
       -e "s|^PLAYER_URL=.*|PLAYER_URL=https://$PLAYER_HOST|" \
       -e "s|^ORIGIN_URL=.*|ORIGIN_URL=https://$ORIGIN_HOST/s|" \
-      -e "s|^S3_BUCKET=.*|S3_BUCKET=videos|" \
       "$APP_DIR/.env.example" > "$SETTINGS"
   # Email values may hold spaces, <> or quotes: written by the shell, quoted for the shell that reads the file.
-  { echo; echo "# Email, set by the installer"; echo "MAIL_PROVIDER=smtp"; echo "SMTP_URL=$(q "$SMTP_URL")"; echo "MAIL_FROM=$(q "$MAIL_FROM")"; } >> "$SETTINGS"
+  { echo; echo "# Email, set by the installer"; echo "MAIL_PROVIDER=smtp"; echo "SMTP_URL=$(q "$SMTP_URL")"; echo "MAIL_FROM=$(q "$MAIL_FROM")"
+    echo; echo "# Storage, set by the installer"; echo "S3_ENDPOINT=$(q "$S3_ENDPOINT")"; echo "S3_REGION=$(q "$S3_REGION")"
+    echo "S3_BUCKET=$(q "$S3_BUCKET")"; echo "S3_ACCESS_KEY_ID=$(q "$S3_ACCESS_KEY_ID")"; echo "S3_SECRET_ACCESS_KEY=$(q "$S3_SECRET_ACCESS_KEY")"; } >> "$SETTINGS"
   chown root:ulka-vms "$SETTINGS"; chmod 640 "$SETTINGS"
   cat > "$CONFIG_DIR/web.env" <<EOF
 CONSOLE_HOST=$CONSOLE_HOST
@@ -180,7 +205,7 @@ EOF
   note "Saved in $SETTINGS. It holds the key your videos are encrypted with (SEAL_KEY): keep a copy somewhere safe."
 else
   # Settings this release added get their defaults, so an upgrade starts without editing the file.
-  added=$(sed -e '/^# Tests/,$d' "$APP_DIR/.env.example" | grep -E '^[A-Z0-9_]+=' | while IFS= read -r line; do
+  added=$(sed -e '/^# Tests/,$d' -e '/^COMPOSE_FILE=/d' "$APP_DIR/.env.example" | grep -E '^[A-Z0-9_]+=' | while IFS= read -r line; do
     grep -q "^${line%%=*}=" "$SETTINGS" || echo "$line"
   done)
   if [ -n "$added" ]; then
@@ -194,25 +219,23 @@ fi
 compose() { (cd "$APP_DIR" && docker compose --env-file "$SETTINGS" "$@"); }
 run() { sh -c "set -a; . '$SETTINGS'; set +a; exec $APP_DIR/bin/ulka-vms $*"; }
 
-step "Starting the database and storage"
+step "Starting the database"
 retry compose pull --quiet
-quiet compose up -d
+quiet compose up -d --remove-orphans # also stops what an earlier release ran and this one doesn't
 for _ in $(seq 1 60); do compose exec -T postgres pg_isready -U postgres -q </dev/null >/dev/null 2>&1 && break; sleep 2; done
-for _ in $(seq 1 60); do curl -s -o /dev/null http://127.0.0.1:8334/ && break; sleep 2; done
-bucket=$(sh -c ". '$SETTINGS'; echo \$S3_BUCKET")
-for _ in $(seq 1 15); do
-  echo "s3.bucket.create -name $bucket" | compose exec -T seaweedfs weed shell >>"$LOG" 2>&1 && break; sleep 2
-done
 quiet run migrate
 note "Done."
 
 step "Starting the video server"
-cp "$APP_DIR/deploy/systemd/ulka-vms-api.service" "$APP_DIR/deploy/systemd/ulka-vms-worker.service" /etc/systemd/system/
+units="ulka-vms-api ulka-vms-worker ulka-vms-origin"
+for unit in $units; do cp "$APP_DIR/deploy/systemd/$unit.service" /etc/systemd/system/; done
 systemctl daemon-reload
-quiet systemctl enable ulka-vms-api ulka-vms-worker
-quiet systemctl restart ulka-vms-api ulka-vms-worker
+quiet systemctl enable $units
+quiet systemctl restart $units
 for _ in $(seq 1 30); do curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta && break; sleep 1; done
 curl -fs -o /dev/null http://127.0.0.1:8096/v1/meta || { journalctl -u ulka-vms-api -n 20 --no-pager >&2; fail "the server didn't start; its last messages are above."; }
+for _ in $(seq 1 15); do [ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/)" = 404 ] && break; sleep 1; done
+[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8092/)" = 404 ] || { journalctl -u ulka-vms-origin -n 20 --no-pager >&2; fail "the video origin didn't start; its last messages are above."; }
 note "Done."
 
 step "Turning on HTTPS"

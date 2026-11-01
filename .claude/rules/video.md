@@ -2,6 +2,8 @@
 paths:
   - "video/**"
   - "player/**"
+  - "origin/**"
+  - "securedrm/**"
   - "web/src/components/library/**"
   - "web/src/components/player/{Watch,Check}.tsx"
   - "web/src/components/{UploadDock,DeliverySettings,Pipeline,Technical,FindReport}.tsx"
@@ -64,6 +66,8 @@ paths:
   `Deps.Keys`, keys live in a key service instead: then only the IV is stored, and playlists send players to the
   service. Never assign a nil pointer to `Deps.Keys`: an
   interface holding one isn't nil.
+- Storage is always an outside S3-compatible bucket (`S3_*`), private; servers keep no videos. `compose.dev.yaml` is
+  development's stand-in and never ships.
 - Storage keys are `<tenant>/<asset>/…`; deleting a video deletes the prefix, so per-video files go under it.
   Captions are WebVTT under it, added to the master playlist when served (`withCaptions`), never baked in.
 - Uploads are our own protocol on `upload_url` (`upload.go`; the id is the permission; refused once whole): one
@@ -75,8 +79,11 @@ paths:
 ## Delivery
 - Behind a CDN the master playlist lists each quality twice (`withBackupVariants`); the second copy fetches segments
   from the origin, so players fall back on their own.
-- The origin sends its own CORS headers and hides storage's: two `Access-Control-Allow-Origin` values fail in browsers
-  while curl and ffmpeg work. Test playback in a browser. Segments cache for a year, so a bad response stays cached.
+- The origin (`origin/`, `ulka-vms origin`) reads the private bucket with the server's key and answers only segment
+  paths; every other file in the bucket stays unreachable (`TestOriginServesSegmentsFromAPrivateBucket`). It sends its
+  own CORS headers only: two `Access-Control-Allow-Origin` values fail in browsers while curl and ffmpeg work, so test
+  playback in a browser. Segments cache for a year, so only successful answers carry `Cache-Control`. Each response is
+  a row of origin_access_logs through `core.DeliveryRow`, like the API's downloads.
 - Delivery modes are `origin` and `custom` (with `providers` for setup steps, Ulka CDN among them). An application
   that runs its own CDN passes a `ManagedCDN` in `video.Options`: then the modes are `origin` and `ulka_cdn`, and
   segments come from its distribution once `Active`, the origin until then (`TestManagedDelivery`).

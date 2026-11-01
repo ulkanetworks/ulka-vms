@@ -30,7 +30,7 @@ Ulka VMS is the open-source edition of the video platform behind [Ulka](https://
 ### Requirements
 
 - Go 1.27 and Node 24
-- Docker, for Postgres, S3-compatible storage (SeaweedFS), ClickHouse and the nginx origin
+- Docker, for Postgres and ClickHouse (development adds a local stand-in for S3-compatible storage)
 - On the path: `ffmpeg` and `ffprobe`, Shaka [`packager`](https://github.com/shaka-project/shaka-packager/releases)
   v3.9 and `cwebp` (package `webp`)
 
@@ -49,11 +49,12 @@ Fill in the blanks in `.env`: `POSTGRES_PASSWORD`, `ULKA_APP_PASSWORD`, `S3_ACCE
 
 ```sh
 set -a; . ./.env; set +a
-docker compose up -d                     # Postgres, SeaweedFS, origin, ClickHouse, telemetry
+docker compose up -d                     # Postgres, ClickHouse, telemetry and a local stand-in storage
 docker compose exec postgres psql -U postgres -c "CREATE DATABASE ulka_vms_test"   # for the tests
 go run ./cmd/ulka-vms migrate
 go run ./cmd/ulka-vms api                # the API on API_ADDR
 go run ./cmd/ulka-vms worker             # encoding and background jobs (another terminal)
+go run ./cmd/ulka-vms origin             # video segments on ORIGIN_ADDR (another terminal)
 cd web && npm ci && npm run dev          # the console on http://localhost:5173
 ```
 
@@ -86,21 +87,23 @@ cd web && npm test               # console unit tests
 ```
 
 The layout: `core` is the shared kernel (sign-in, permissions, errors, tenancy), `accounts`, `video`, `transcoder`,
-`player`, `webhooks`, `usage` and `notices` are the modules, `securedrm` is the client of the optional hosted key
-service, `app` assembles them, `cmd/ulka-vms` is the binary,
+`player`, `webhooks`, `usage` and `notices` are the modules, `origin` serves segments from storage, `securedrm` is
+the client of the optional hosted key service, `app` assembles them, `cmd/ulka-vms` is the binary,
 `migrations` the Postgres schema and `web` the React console. [ARCHITECTURE.md](ARCHITECTURE.md) explains how they
 fit together and how to build on Ulka VMS.
 
 ## Deployment
 
-One server runs everything; more machines can be added for encoding. On Ubuntu or Debian, point `videos.`, `player.`
-and `origin.` under your domain at the server, then run:
+One server runs everything, with videos kept in S3-compatible storage of your choice (AWS S3, Cloudflare R2, Backblaze
+B2, Wasabi, MinIO); more machines can be added for encoding. Make a private bucket and a key for it, point `videos.`,
+`player.` and `origin.` under your domain at an Ubuntu or Debian server, then run:
 
 ```sh
 curl -fsSL https://github.com/ulkanetworks/ulka-vms/releases/latest/download/install.sh | sudo bash
 ```
 
-It asks two questions, installs everything and starts it with HTTPS; run it again to upgrade.
+It asks for your domain, email and storage details, installs everything and starts it with HTTPS; run it again to
+upgrade.
 [SELF-HOSTING.md](SELF-HOSTING.md) has the same steps by hand, plus backups. Service files
 are in `deploy/systemd` and the Caddy configuration in `deploy/Caddyfile`.
 
