@@ -159,7 +159,9 @@ if [ "$STATE" = fresh ]; then
   note "In your DNS, add an A record for each one pointing at ${public_ip:-the public IP address of this server}."
   note "You can add them while this runs: the next step checks them."
   ask DOMAIN "Your domain"
-  DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%/}
+  # Forgiving of what people paste: a URL, one of the three names, or all three.
+  DOMAIN=${DOMAIN#https://}; DOMAIN=${DOMAIN#http://}; DOMAIN=${DOMAIN%%[,/ ]*}
+  case "$DOMAIN" in videos.*|player.*|origin.*) DOMAIN=${DOMAIN#*.}; note "Using $DOMAIN: the three names are made under it." ;; esac
   [[ "$DOMAIN" =~ ^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]] || fail "\"$DOMAIN\" isn't a domain, like example.com."
   CONSOLE_HOST="videos.$DOMAIN"; PLAYER_HOST="player.$DOMAIN"; ORIGIN_HOST="origin.$DOMAIN"
   note "Email is how people get invitations and password resets. Give your email service's SMTP address,"
@@ -192,6 +194,14 @@ if [ "$STATE" = fresh ]; then
       if [ -z "$public_ip" ] || [ "$resolved" != "$public_ip" ]; then missing+=("$host"); fi
     done
     if [ ${#missing[@]} -eq 0 ]; then note "All three names point here."; break; fi
+    proxied=()
+    for host in "${missing[@]}"; do
+      curl -sI --max-time 5 "http://$host/" 2>/dev/null | grep -qi '^server: cloudflare' && proxied+=("$host")
+    done
+    if [ ${#proxied[@]} -gt 0 ]; then
+      note "These names go through Cloudflare's proxy (the orange cloud): ${proxied[*]}"
+      note "In Cloudflare's DNS, set each to DNS only (the grey cloud), so visitors and certificates reach this server."
+    fi
     note "These names must point at this server for HTTPS to work. Add an A record for each:"
     for host in "${missing[@]}"; do note "  $host  ->  ${public_ip:-the public address of this server}"; done
     CONTINUE=$preset
